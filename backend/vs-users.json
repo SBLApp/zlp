@@ -1,0 +1,96 @@
+{
+  "users": [
+    {
+      "login": "+79291101007",
+      "role": "admin",
+      "comment": "Админ — полный доступ",
+      "modules": [
+        "stats",
+        "data",
+        "monitor",
+        "consolidation",
+        "docs",
+        "settings"
+      ],
+      "companyIds": [],
+      "allowWithoutToken": false,
+      "telegramChatId": "544569923"
+    },
+    {
+      "login": "A",
+      "role": "admin",
+      "comment": "Админ — полный доступ",
+      "modules": [
+        "stats",
+        "data",
+        "monitor",
+        "consolidation",
+        "docs",
+        "settings"
+      ],
+      "companyIds": [],
+      "allowWithoutToken": true,
+      "passwordHash": "0602febb1cf47404d56409ad0d9f3011:1bfe35301fafc906bfbe3291ff4627669d2196dc21c243b47e24294bb4e5289886be049ee8317e65bffe4d28dc9d3b6db317d77c9174cf03b1699d393cab291e"
+    },
+    {
+      "login": "vs",
+      "role": "admin",
+      "comment": "Админ — полный доступ",
+      "modules": [
+        "stats",
+        "data",
+        "monitor",
+        "consolidation",
+        "docs",
+        "settings"
+      ],
+      "companyIds": [],
+      "allowWithoutToken": true,
+      "passwordHash": "6b181fce0764ad0795082285af924089:09bf584da234fbed7e6668388076e44cad5789913649bfac764e459880363c713e76eccdc7c63da0df978e573eff9e5415485cb2ce9b96ce6b191ae27b9b78f8"
+    },
+    {
+      "login": "+79001234568",
+      "role": "group_leader",
+      "comment": "Руководитель группы — видит все смены",
+      "modules": [
+        "stats",
+        "data",
+        "monitor",
+        "consolidation",
+        "docs"
+      ]
+    },
+    {
+      "login": "+79643749533",
+      "role": "supervisor",
+      "shiftType": "day",
+      "comment": "Начальник дневной смены",
+      "modules": [
+        "stats",
+        "data",
+        "monitor",
+        "consolidation",
+        "docs"
+      ]
+    },
+    {
+      "login": "+79001234570",
+      "role": "supervisor",
+      "shiftType": "night",
+      "comment": "Начальник ночной смены"
+    },
+    {
+      "login": "+79291101008",
+      "role": "manager",
+      "companyIds": [
+        "Мувинг"
+      ],
+      "comment": "Менеджер — данные по своим компаниям",
+      "modules": [
+        "stats",
+        "monitor"
+      ],
+      "telegramChatId": "544569923"
+    }
+  ]
+}

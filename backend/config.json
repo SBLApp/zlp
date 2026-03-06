@@ -1,0 +1,22 @@
+{
+  "token": "eyJraWQiOiI2MTg2OTEiLCJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MTczNjgzMjY3IiwiaWF0IjoxNzcyODE0OTM1LCJleHAiOjE3NzI4MTUyMzUsImF1ZCI6Imh0dHBzOi8vc2Ftb2thdC5ydSIsInNjb3BlIjpbIndtc19jaGllZl9zdG9ja21hbiJdLCJjbGllbnRfaWQiOiJXTVMiLCJkZXZpY2VfaWQiOm51bGwsInVzZXIiOnsidXNlcklkIjoiYTE1NzRmMGYtMTkyYi00N2QwLTgyNDYtOWJkYjNhYTllZTM5IiwidXNlclR5cGUiOiIifSwic3ViIjoiYTE1NzRmMGYtMTkyYi00N2QwLTgyNDYtOWJkYjNhYTllZTM5In0.D7mONZSu_92Kxjo4OTnWlxxOushUmWpUg14cDTIbujMglTSNYXs0_F7BuJtsHCIA72D0998QjLxiTXtaUlbM5FJFP-NmXPY-XdXD9B5QY_VGqNhtGpovtg2YlbAENfN0nnjrfGyqjHFpgLtuRxsEn9AaItHN12WmtZvlI2G4530",
+  "refreshToken": "1eb4d6649a313c92266a224cb7fc58c6cf2adcb199e28ecbccb779a88e966c85",
+  "intervalMinutes": 1,
+  "pageSize": 500,
+  "apiUrl": "https://api.samokat.ru/wmsops-wwh/stocks/changes/search",
+  "useVpn": false,
+  "cookie": "spid=1770724072324_72378534b4403924ebea42a9d7833def_mcutbxnf9tjr0bth",
+  "telegramBotToken": "8146351487:AAFObSDQImzbiArZ8uDqq4S6DnGhxQe8DEs",
+  "telegramChatId": "-1002388325048",
+  "telegramThreadId": "19744",
+  "telegramChats": [
+    {
+      "chatId": "544569923",
+      "threadIdConsolidation": "",
+      "threadIdStats": "",
+      "label": ""
+    }
+  ],
+  "telegramTimezone": "Europe/Moscow",
+  "connectionMode": "browser"
+}
