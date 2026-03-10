@@ -187,6 +187,15 @@
           <button class="filter-chip active" data-company="__all__">Все сотрудники</button>
         </div>
       </div>
+      <div class="card company-summary-card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <span>Сводка по компаниям</span>
+          <span class="card-header-sub">Сотрудники, СЗЧ (), Итог СЗ</span>
+        </div>
+        <div id="company-summary-table-wrap">
+          <div class="empty-row" style="padding:16px;text-align:center;color:var(--text-muted)">Нет данных</div>
+        </div>
+      </div>
       <div class="card" style="margin-bottom:20px;">
         <div class="card-header">
           <span>Пики по часам</span>
@@ -445,6 +454,21 @@
           <span>Жалобы на нарушения</span>
           <a href="/consolidation.html" target="_blank" class="card-header-sub" style="text-decoration:underline;">Форма для сотрудников</a>
         </div>
+        <div class="cons-pagination-bar">
+          <div class="cons-pagination-left">
+            <span class="muted-text">Показывать:</span>
+            <select id="cons-page-size" class="cons-status-select" title="Строк на страницу">
+              <option value="10" selected>10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+            </select>
+            <span id="cons-page-info" class="muted-text">—</span>
+          </div>
+          <div class="cons-pagination-right">
+            <button type="button" class="btn btn-secondary" id="cons-page-prev" title="Предыдущая страница">←</button>
+            <button type="button" class="btn btn-secondary" id="cons-page-next" title="Следующая страница">→</button>
+          </div>
+        </div>
         <div class="cons-table-scroll">
           <div id="cons-table-wrap">
             <div class="cons-empty">Нажмите «Обновить» для загрузки</div>
@@ -462,6 +486,65 @@
       <img id="cons-photo-modal-img" src="" alt="Фото">
       <button id="cons-photo-next" class="cons-photo-nav cons-photo-nav--next" title="Следующее">&#10095;</button>
       <div id="cons-photo-counter" class="cons-photo-counter">1 / 1</div>
+    </div>
+  </div>
+
+  <!-- Модалка редактирования жалобы: компания → сотрудник → остальные поля -->
+  <div id="cons-edit-modal" class="modal-overlay cons-edit-modal">
+    <div class="cons-edit-modal-inner">
+      <div class="cons-edit-header">
+        <h3>Редактировать жалобу</h3>
+        <button type="button" class="cons-edit-close" title="Закрыть">&times;</button>
+      </div>
+      <div class="cons-edit-steps">
+        <div id="cons-edit-step1" class="cons-edit-step">
+          <label class="cons-edit-label">Компания</label>
+          <select id="cons-edit-company" class="form-control cons-edit-select">
+            <option value="">— Выберите компанию —</option>
+          </select>
+        </div>
+        <div id="cons-edit-step2" class="cons-edit-step" style="display:none;">
+          <label class="cons-edit-label">Сотрудник (нарушитель)</label>
+          <select id="cons-edit-violator" class="form-control cons-edit-select">
+            <option value="">— Сначала выберите компанию —</option>
+          </select>
+        </div>
+        <div id="cons-edit-step3" class="cons-edit-step cons-edit-fields" style="display:none;">
+          <label class="cons-edit-label">Остальные поля</label>
+          <div class="cons-edit-grid">
+            <div class="cons-edit-field">
+              <label>Место</label>
+              <input type="text" id="cons-edit-cell" class="form-control" placeholder="KDH-4-44">
+            </div>
+            <div class="cons-edit-field">
+              <label>Штрихкод / ЕО</label>
+              <input type="text" id="cons-edit-barcode" class="form-control" placeholder="Штрихкод">
+            </div>
+            <div class="cons-edit-field">
+              <label>Артикул</label>
+              <input type="text" id="cons-edit-nomenclatureCode" class="form-control" placeholder="УТ-00000000">
+            </div>
+            <div class="cons-edit-field cons-edit-field--wide">
+              <label>Товар</label>
+              <input type="text" id="cons-edit-productName" class="form-control" placeholder="Название товара">
+            </div>
+            <div class="cons-edit-field">
+              <label>ШК товара</label>
+              <input type="text" id="cons-edit-productBarcode" class="form-control" placeholder="4600...">
+            </div>
+            <div class="cons-edit-field">
+              <label>ЕО</label>
+              <input type="text" id="cons-edit-handlingUnitBarcode" class="form-control" placeholder="0122...">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cons-edit-actions">
+        <button type="button" class="btn btn-secondary" id="cons-edit-cancel">Отмена</button>
+        <button type="button" class="btn btn-secondary" id="cons-edit-back" style="display:none;">Назад</button>
+        <button type="button" class="btn btn-primary" id="cons-edit-next">Далее</button>
+        <button type="button" class="btn btn-primary" id="cons-edit-save" style="display:none;">Сохранить</button>
+      </div>
     </div>
   </div>
 

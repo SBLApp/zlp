@@ -274,6 +274,47 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
   display: flex; align-items: center; justify-content: space-between;
 }
 
+/* Карточка сводки по компаниям — красная рамка */
+.company-summary-card {
+  border: 2px solid var(--error);
+  box-shadow: 0 0 0 1px var(--error);
+}
+
+.company-summary-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+}
+.company-summary-table th,
+.company-summary-table td {
+  padding: 8px 10px; border: 1px solid var(--border);
+  text-align: center; vertical-align: middle;
+}
+.company-summary-table thead th {
+  background: var(--bg); font-weight: 600; color: var(--text); font-size: 12px;
+}
+.company-summary-table tbody td { background: var(--white); }
+.company-summary-table .cs-th-company,
+.company-summary-table .cs-td-company {
+  max-width: 100px; font-weight: 700; text-align: center;
+}
+.company-summary-table th:nth-child(2),
+.company-summary-table td:nth-child(2) {
+  max-width: 56px; min-width: 48px;
+}
+.company-summary-table .cs-td-num,
+.company-summary-table .cs-th-num { text-align: center; vertical-align: middle; }
+.company-summary-table .cs-th-hour,
+.company-summary-table .cs-td-hour { min-width: 36px; font-size: 12px; text-align: center; vertical-align: middle; }
+.company-summary-table thead th,
+.company-summary-table tbody td { text-align: center; vertical-align: middle; }
+.company-summary-formulas {
+  padding: 12px 20px; border-top: 1px solid var(--border);
+  background: var(--bg); font-size: 12px; color: var(--text-muted);
+}
+.company-summary-formulas .cs-formula-row { margin-bottom: 6px; }
+.company-summary-formulas .cs-formula-row:last-child { margin-bottom: 0; }
+.cs-formula-label { font-weight: 500; color: var(--text); }
+.cs-formula-text { margin-left: 8px; }
+
 /* ================================================================
    ТАБЛИЦА СОТРУДНИКОВ
 ================================================================ */
@@ -1548,6 +1589,31 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
   -webkit-overflow-scrolling: touch;
 }
 
+.cons-pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--white);
+}
+
+.cons-pagination-left,
+.cons-pagination-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+#cons-page-prev,
+#cons-page-next {
+  padding: 6px 10px;
+  min-width: 40px;
+}
+
 .cons-table {
   width: 100%;
   border-collapse: collapse;
@@ -1746,10 +1812,20 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 }
 
 .cons-actions {
+  white-space: nowrap;
+}
+
+.cons-actions-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.cons-actions-btns {
   display: flex;
   align-items: center;
   gap: 6px;
-  white-space: nowrap;
 }
 
 .cons-status-select {
@@ -1786,6 +1862,84 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
   border-color: #fecaca !important;
 }
 
+.cons-btn-edit {
+  padding: 4px 8px !important;
+  font-size: 14px !important;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.cons-btn-edit:hover {
+  background: var(--green-light) !important;
+  color: var(--green-dark) !important;
+  border-color: var(--green-mid) !important;
+}
+
+/* Модалка редактирования жалобы */
+.cons-edit-modal {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.4);
+  z-index: 1000;
+}
+.cons-edit-modal.cons-edit-modal--open {
+  display: flex;
+}
+
+.cons-edit-modal-inner {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  max-width: 480px;
+  width: 95%;
+  box-shadow: var(--shadow-md);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.cons-edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.cons-edit-header h3 { font-size: 16px; font-weight: 600; margin: 0; }
+.cons-edit-close {
+  width: 28px; height: 28px;
+  border: none;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.cons-edit-close:hover { background: var(--border); color: var(--text); }
+
+.cons-edit-step { margin-bottom: 16px; }
+.cons-edit-label { display: block; font-size: 13px; font-weight: 500; color: var(--text-muted); margin-bottom: 8px; }
+.cons-edit-select { width: 100%; }
+.cons-edit-fields .cons-edit-label { margin-bottom: 10px; }
+.cons-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.cons-edit-field { display: flex; flex-direction: column; gap: 4px; }
+.cons-edit-field label { font-size: 12px; color: var(--text-muted); }
+.cons-edit-field--wide { grid-column: 1 / -1; }
+.cons-edit-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 .cons-empty {
   padding: 40px;
   text-align: center;
@@ -1817,6 +1971,8 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 @media (max-width: 768px) {
   .cons-filters { margin-left: 0; width: 100%; }
   .cons-toolbar { gap: 10px; }
+  .cons-pagination-bar { flex-direction: column; align-items: stretch; }
+  .cons-pagination-right { justify-content: flex-end; }
 }
 
 /* Сотрудники без компании (настройки /vs) */

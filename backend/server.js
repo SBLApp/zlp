@@ -271,20 +271,41 @@ function tgSafe(v) {
   return String(v == null ? '' : v).trim();
 }
 
-function formatComplaintForTelegram(c, photoUrl, config = {}) {
+function escapeTgHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/** Экранирование для Telegram Markdown (* и _ в контенте не должны ломать разметку) */
+function escapeTgMarkdown(s) {
+  return String(s == null ? '' : s)
+    .replace(/\\/g, '\\\\')
+    .replace(/\*/g, '\\*')
+    .replace(/_/g, '\\_')
+    .replace(/`/g, '\\`')
+    .replace(/\[/g, '\\[');
+}
+
+function formatComplaintForTelegram(c, photoUrl, config = {}, companyResolved = null) {
   const dt = c?.operationCompletedAt || c?.createdAt || '';
   const tz = (config && config.telegramTimezone) || 'Europe/Moscow';
   const dateText = dt
     ? new Date(dt).toLocaleString('ru-RU', { timeZone: tz })
     : '—';
+  const company = companyResolved != null ? companyResolved : (c.company != null && String(c.company).trim() !== '' ? c.company : '—');
+  const v = (x) => escapeTgMarkdown(tgSafe(x) || '—');
+  const dateEsc = escapeTgMarkdown(dateText);
   return [
-    `Нарушитель: ${tgSafe(c.violator) || '—'}`,
-    `Место: ${tgSafe(c.cell) || '—'}`,
-    `ЕО: ${tgSafe(c.handlingUnitBarcode) || '—'}`,
-    `Штрихкод товара: ${tgSafe(c.productBarcode) || '—'}`,
-    `Товар: ${tgSafe(c.productName) || '—'}`,
-    `Время: ${dateText}`,
-    `Фото: ${photoUrl ? 'приложено' : '—'}`,
+    `*Компания:* ${v(company)}`,
+    `*Нарушитель:* ${v(c.violator)}`,
+    `*Место:* ${v(c.cell)}`,
+    `*ЕО:* ${v(c.handlingUnitBarcode)}`,
+    `*ШК:* ${v(c.productBarcode)}`,
+    `*Товар:* ${v(c.productName)}`,
+    `*Время:* ${dateEsc}`,
+    `*Фото:* ${photoUrl ? '✅' : '—'}`,
   ].join('\n');
 }
 
@@ -297,7 +318,7 @@ function parseTelegramThreadId(value) {
   return n;
 }
 
-async function sendTelegramMessage(botToken, chatId, text, threadId = null) {
+async function sendTelegramMessage(botToken, chatId, text, threadId = null, parseMode = null) {
   const url = `https://api.telegram.org/bot${encodeURIComponent(botToken)}/sendMessage`;
   const payload = {
     chat_id: chatId,
@@ -305,6 +326,7 @@ async function sendTelegramMessage(botToken, chatId, text, threadId = null) {
     disable_web_page_preview: true,
   };
   if (threadId) payload.message_thread_id = threadId;
+  if (parseMode) payload.parse_mode = parseMode;
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -318,16 +340,17 @@ async function sendTelegramMessage(botToken, chatId, text, threadId = null) {
   }
 }
 
-async function sendTelegramPhoto(botToken, chatId, caption, photoPath, photoFilename = 'photo.jpg', threadId = null) {
+async function sendTelegramPhoto(botToken, chatId, caption, photoPath, photoFilename = 'photo.jpg', threadId = null, parseMode = null) {
   const fileBuf = fs.readFileSync(photoPath);
-  return sendTelegramPhotoFromBuffer(botToken, chatId, caption, fileBuf, photoFilename, threadId);
+  return sendTelegramPhotoFromBuffer(botToken, chatId, caption, fileBuf, photoFilename, threadId, parseMode);
 }
 
-async function sendTelegramPhotoFromBuffer(botToken, chatId, caption, buffer, photoFilename = 'photo.png', threadId = null) {
+async function sendTelegramPhotoFromBuffer(botToken, chatId, caption, buffer, photoFilename = 'photo.png', threadId = null, parseMode = null) {
   const url = `https://api.telegram.org/bot${encodeURIComponent(botToken)}/sendPhoto`;
   const form = new FormData();
-  form.append('chat_id', chatId);
+  form.append('chat_id', String(chatId));
   if (threadId) form.append('message_thread_id', String(threadId));
+  if (parseMode) form.append('parse_mode', String(parseMode));
   if (caption) form.append('caption', caption);
   const blob = new Blob([buffer]);
   form.append('photo', blob, photoFilename);
@@ -357,11 +380,12 @@ async function sendTelegramDocumentFromBuffer(botToken, chatId, caption, buffer,
   }
 }
 
-async function sendTelegramMediaGroup(botToken, chatId, caption, files, threadId = null) {
+async function sendTelegramMediaGroup(botToken, chatId, caption, files, threadId = null, parseMode = null) {
   const url = `https://api.telegram.org/bot${encodeURIComponent(botToken)}/sendMediaGroup`;
   const form = new FormData();
-  form.append('chat_id', chatId);
+  form.append('chat_id', String(chatId));
   if (threadId) form.append('message_thread_id', String(threadId));
+  if (parseMode) form.append('parse_mode', String(parseMode));
 
   const media = files.map((f, i) => ({
     type: 'photo',
@@ -448,6 +472,7 @@ function normalizeFioForMatch(fio) {
 
 function getCompanyByFio(emplMap, executorFio) {
   const norm = normalizeFioForMatch(executorFio);
+  if (!norm) return null;
   for (const [key, company] of emplMap) {
     if (norm === key || norm.includes(key) || key.includes(norm)) return company;
   }
@@ -980,11 +1005,16 @@ app.post('/api/consolidation/complaints', upload.array('photo', 10), (req, res) 
   }
 });
 
-// GET /api/consolidation/complaints — список жалоб
+// GET /api/consolidation/complaints — список жалоб (компания из консолидации или по ФИО из empl)
 app.get('/api/consolidation/complaints', (req, res) => {
   try {
     const list = loadComplaints();
-    res.json(list);
+    const emplMap = getEmplMapFioToCompany();
+    const enriched = list.map(c => ({
+      ...c,
+      company: (c.company != null && String(c.company).trim() !== '') ? c.company : (getCompanyByFio(emplMap, c.violator) || ''),
+    }));
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1046,6 +1076,8 @@ app.put('/api/consolidation/complaints/:id/lookup', (req, res) => {
     const item = list.find(c => c.id === req.params.id);
     if (!item) return res.status(404).json({ ok: false, error: 'Не найдено' });
     const d = req.body || {};
+    if (d.cell !== undefined) item.cell = d.cell;
+    if (d.barcode !== undefined) item.barcode = d.barcode;
     if (d.productName !== undefined) item.productName = d.productName;
     if (d.nomenclatureCode !== undefined) item.nomenclatureCode = d.nomenclatureCode;
     if (d.productBarcode !== undefined) item.productBarcode = d.productBarcode;
@@ -1056,6 +1088,11 @@ app.put('/api/consolidation/complaints/:id/lookup', (req, res) => {
     if (d.operationCompletedAt !== undefined) item.operationCompletedAt = d.operationCompletedAt;
     if (d.lookupDone !== undefined) item.lookupDone = d.lookupDone;
     if (d.lookupError !== undefined) item.lookupError = d.lookupError;
+    if (d.company !== undefined) item.company = d.company;
+    if (item.violator != null && (item.company == null || String(item.company).trim() === '')) {
+      const emplMap = getEmplMapFioToCompany();
+      item.company = getCompanyByFio(emplMap, item.violator) || '';
+    }
     saveComplaints(list);
     res.json({ ok: true, complaint: item });
   } catch (err) {
@@ -1093,6 +1130,7 @@ app.post('/api/consolidation/telegram/send', async (req, res) => {
     const sent = [];
     const failed = [];
     const origin = `${req.protocol}://${req.get('host')}`;
+    const emplMap = getEmplMapFioToCompany();
     for (const c of onlyInProgress) {
       const photos = Array.isArray(c?.photoFilenames) && c.photoFilenames.length > 0
         ? c.photoFilenames
@@ -1100,7 +1138,8 @@ app.post('/api/consolidation/telegram/send', async (req, res) => {
       const photoUrl = photos.length > 0
         ? `${origin}/api/consolidation/uploads/${encodeURIComponent(photos[0])}`
         : '';
-      const text = formatComplaintForTelegram(c, photoUrl, config);
+      const company = (c.company != null && String(c.company).trim() !== '') ? c.company : (getCompanyByFio(emplMap, c.violator) || '—');
+      const text = formatComplaintForTelegram(c, photoUrl, config, company);
       const photoPaths = photos
         .map(name => ({ name, path: path.join(UPLOADS_DIR, name) }))
         .filter(x => fs.existsSync(x.path));
@@ -1109,12 +1148,12 @@ app.post('/api/consolidation/telegram/send', async (req, res) => {
         const threadId = chat.threadIdConsolidation;
         try {
           if (photoPaths.length > 1) {
-            await sendTelegramMediaGroup(botToken, chat.chatId, text, photoPaths, threadId);
+            await sendTelegramMediaGroup(botToken, chat.chatId, text, photoPaths, threadId, 'Markdown');
           } else if (photoPaths.length === 1) {
             const p = photoPaths[0];
-            await sendTelegramPhoto(botToken, chat.chatId, text, p.path, p.name, threadId);
+            await sendTelegramPhoto(botToken, chat.chatId, text, p.path, p.name, threadId, 'Markdown');
           } else {
-            await sendTelegramMessage(botToken, chat.chatId, text, threadId);
+            await sendTelegramMessage(botToken, chat.chatId, text, threadId, 'Markdown');
           }
           sentToAny = true;
         } catch (e) {

@@ -7,7 +7,8 @@ import * as auth from './auth.js';
 import * as tableModule from './table.js';
 import {
   calcStats, renderStats, renderExecutorTable, renderHourlyChart, renderHourlyByEmployee,
-  getHourlyByEmployeeGroupedByCompany, buildHourlyTableHtmlForCompany,
+  getHourlyByEmployeeGroupedByCompany, buildHourlyTableHtmlForCompany, buildHourlyTableHtmlFullList,
+  getCompanySummaryTableData, renderCompanySummaryTable,
 } from './stats.js';
 import {
   initMonitor, updateMonitorEmpl, loadRollcall, getRollcallCount,
@@ -410,6 +411,8 @@ function renderAll() {
   const stats = calcStats(itemsByShift, emplMap, filterCompany);
   renderStats(stats, dateCardLabel());
   renderExecutorTable(stats.executors);
+  const summaryData = getCompanySummaryTableData(itemsByShift, shiftFilter, emplMap, selectedDate);
+  renderCompanySummaryTable(summaryData.rows, summaryData.hoursDisplay);
   renderHourlyChart(stats.hourly, shiftFilter);
   renderHourlyByEmployee(tableItems, shiftFilter, emplMap);
   tableModule.setTableData(tableItems, emplMap);
@@ -1200,7 +1203,7 @@ function setupEventListeners() {
     if (e.target.id === 'vs-telegram-bind-modal') closeVsTelegramBindModal();
   });
 
-  async function runSendHourlyTelegram(btn, companies, byCompany, hours, shiftFilter, selectedDate) {
+  async function runSendHourlyTelegram(btn, companies, byCompany, hours, shiftFilter, selectedDate, allRows) {
     const dateStr = (selectedDate || '').replace(/(\d{4})-(\d{2})-(\d{2})/, '$3.$2.$1');
     const shiftLabelText = shiftFilter === 'night' ? 'Ночь' : 'День';
     const container = document.createElement('div');
@@ -1209,6 +1212,33 @@ function setupEventListeners() {
     if (btn) btn.disabled = true;
     try {
       const items = [];
+      if (allRows && allRows.length > 0) {
+        try {
+          const fullHtml = buildHourlyTableHtmlFullList(allRows, hours, dateStr, shiftLabelText);
+          container.innerHTML = fullHtml;
+          const div = container.querySelector('.he-telegram-wrap') || container.firstElementChild;
+          if (div) {
+            const canvas = await window.html2canvas(div, {
+              scale: 2,
+              useCORS: true,
+              logging: false,
+              backgroundColor: '#ffffff',
+            });
+            const blob = await new Promise((resolve, reject) => {
+              canvas.toBlob(b => (b ? resolve(b) : reject(new Error('PNG'))), 'image/png', 1);
+            });
+            if (blob && blob.size > 0) {
+              items.push({
+                blob,
+                caption: `Весь список по часам • ${dateStr} • ${shiftLabelText}`,
+                filename: `full_list_${dateStr.replace(/\./g, '-')}.png`,
+              });
+            }
+          }
+        } catch (fullListErr) {
+          console.warn('Общий список по часам не удалось сформировать:', fullListErr);
+        }
+      }
       for (const companyName of companies) {
         const rows = byCompany[companyName] || [];
         const html = buildHourlyTableHtmlForCompany(companyName, rows, hours, dateStr, shiftLabelText);
@@ -1251,9 +1281,12 @@ function setupEventListeners() {
       return;
     }
     const tableItems = getFilteredItems();
-    const { hours, byCompany } = getHourlyByEmployeeGroupedByCompany(tableItems, shiftFilter, emplMap, selectedDate);
-    const companies = Object.keys(byCompany).filter(c => (byCompany[c] || []).length > 0);
-    if (!companies.length) {
+    const { hours, byCompany, allRows, companiesOrder } = getHourlyByEmployeeGroupedByCompany(tableItems, shiftFilter, emplMap, selectedDate);
+    const companies = (companiesOrder || Object.keys(byCompany)).filter(c => (byCompany[c] || []).length > 0);
+    const allRowsResolved = Array.isArray(allRows) && allRows.length > 0
+      ? allRows
+      : companies.flatMap(c => byCompany[c] || []);
+    if (!companies.length && !allRowsResolved.length) {
       showNotification('Нет данных для отправки', 'error');
       return;
     }
@@ -1275,7 +1308,7 @@ function setupEventListeners() {
                 if (telegramBindPollId) clearInterval(telegramBindPollId);
                 telegramBindPollId = null;
                 el('vs-telegram-bind-modal').classList.remove('modal--open');
-                await runSendHourlyTelegram(btn, companies, byCompany, hours, shiftFilter, selectedDate);
+                await runSendHourlyTelegram(btn, companies, byCompany, hours, shiftFilter, selectedDate, allRowsResolved);
               }
             } catch (_) {}
           }, 2000);
@@ -1287,7 +1320,7 @@ function setupEventListeners() {
       }
     }
 
-    await runSendHourlyTelegram(btn, companies, byCompany, hours, shiftFilter, selectedDate);
+    await runSendHourlyTelegram(btn, companies, byCompany, hours, shiftFilter, selectedDate, allRowsResolved);
   });
 
   // Поиск

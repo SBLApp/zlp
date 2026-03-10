@@ -27,6 +27,8 @@ let selectedComplaintIds = new Set();
 let modalPhotoUrls = [];
 let modalPhotoIndex = 0;
 let modalControlsBound = false;
+let complaintsPageSize = 10;
+let complaintsPage = 1;
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -520,6 +522,11 @@ export function initConsolidation() {
   const bulkDeleteBtn = document.getElementById('cons-bulk-delete');
   if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', () => bulkDeleteSelected(bulkDeleteBtn));
 
+  if (!editModalBound) {
+    editModalBound = true;
+    bindEditModalHandlers();
+  }
+
   if (!modalControlsBound) {
     const prevBtn = document.getElementById('cons-photo-prev');
     const nextBtn = document.getElementById('cons-photo-next');
@@ -560,6 +567,33 @@ export function initConsolidation() {
       filterWrap.querySelectorAll('.cons-filter-chip').forEach(c =>
         c.classList.toggle('active', c.dataset.filter === statusFilter)
       );
+      complaintsPage = 1;
+      renderComplaints();
+    });
+  }
+
+  const pageSizeSel = document.getElementById('cons-page-size');
+  if (pageSizeSel) {
+    pageSizeSel.addEventListener('change', () => {
+      const n = Number(pageSizeSel.value);
+      complaintsPageSize = [10, 25, 50].includes(n) ? n : 10;
+      complaintsPage = 1;
+      renderComplaints();
+    });
+  }
+  const prevBtn = document.getElementById('cons-page-prev');
+  if (prevBtn) {
+    prevBtn.addEventListener('click', () => {
+      if (complaintsPage > 1) {
+        complaintsPage -= 1;
+        renderComplaints();
+      }
+    });
+  }
+  const nextBtn = document.getElementById('cons-page-next');
+  if (nextBtn) {
+    nextBtn.addEventListener('click', () => {
+      complaintsPage += 1;
       renderComplaints();
     });
   }
@@ -757,6 +791,212 @@ function getFilteredComplaints() {
   return allComplaints.filter(c => c.status === statusFilter);
 }
 
+// ─── Модалка редактирования жалобы (компания → сотрудник → остальные поля) ───
+
+let editModalComplaintId = null;
+let editModalEmpl = { employees: [], companies: [] };
+let editModalStep = 1;
+
+async function fetchEmpl() {
+  const r = await fetch('/api/empl');
+  const data = await r.json();
+  return { employees: data.employees || [], companies: data.companies || [] };
+}
+
+function openEditModal(complaint) {
+  editModalComplaintId = complaint.id;
+  editModalStep = 1;
+  const modal = document.getElementById('cons-edit-modal');
+  const step1 = document.getElementById('cons-edit-step1');
+  const step2 = document.getElementById('cons-edit-step2');
+  const step3 = document.getElementById('cons-edit-step3');
+  const companySel = document.getElementById('cons-edit-company');
+  const violatorSel = document.getElementById('cons-edit-violator');
+  const nextBtn = document.getElementById('cons-edit-next');
+  const saveBtn = document.getElementById('cons-edit-save');
+  if (!modal || !step1 || !companySel) return;
+
+  step1.style.display = 'block';
+  step2.style.display = 'none';
+  step3.style.display = 'none';
+  nextBtn.style.display = 'inline-block';
+  saveBtn.style.display = 'none';
+  nextBtn.textContent = 'Далее';
+  const backBtn = document.getElementById('cons-edit-back');
+  if (backBtn) backBtn.style.display = 'none';
+
+  companySel.innerHTML = '<option value="">— Выберите компанию —</option>';
+  violatorSel.innerHTML = '<option value="">— Сначала выберите компанию —</option>';
+
+  // Заполняем остальные поля текущими значениями
+  const cellEl = document.getElementById('cons-edit-cell');
+  const barcodeEl = document.getElementById('cons-edit-barcode');
+  const nomEl = document.getElementById('cons-edit-nomenclatureCode');
+  const productEl = document.getElementById('cons-edit-productName');
+  const productBarcodeEl = document.getElementById('cons-edit-productBarcode');
+  const handlingEl = document.getElementById('cons-edit-handlingUnitBarcode');
+  if (cellEl) cellEl.value = complaint.cell || '';
+  if (barcodeEl) barcodeEl.value = complaint.barcode || '';
+  if (nomEl) nomEl.value = complaint.nomenclatureCode || '';
+  if (productEl) productEl.value = complaint.productName || '';
+  if (productBarcodeEl) productBarcodeEl.value = complaint.productBarcode || '';
+  if (handlingEl) handlingEl.value = complaint.handlingUnitBarcode || '';
+
+  fetchEmpl().then((empl) => {
+    editModalEmpl = empl;
+    (empl.companies || []).forEach((c) => {
+      const opt = document.createElement('option');
+      opt.value = c;
+      opt.textContent = c;
+      if (complaint.company && String(complaint.company).trim() === c) opt.selected = true;
+      companySel.appendChild(opt);
+    });
+    const selectedCompany = companySel.value;
+    if (selectedCompany) fillViolatorSelect(violatorSel, empl.employees, selectedCompany, complaint.violator);
+  }).catch((err) => {
+    console.error('empl', err);
+    companySel.innerHTML = '<option value="">— Ошибка загрузки —</option>';
+  });
+
+  modal.classList.add('cons-edit-modal--open');
+  companySel.focus();
+}
+
+function fillViolatorSelect(selectEl, employees, company, selectedFio) {
+  selectEl.innerHTML = '<option value="">— Выберите сотрудника —</option>';
+  const byCompany = (employees || []).filter((e) => e.company === company);
+  byCompany.forEach((e) => {
+    const opt = document.createElement('option');
+    opt.value = e.fio;
+    opt.textContent = e.fio;
+    if (selectedFio && String(e.fio).trim() === String(selectedFio).trim()) opt.selected = true;
+    selectEl.appendChild(opt);
+  });
+}
+
+function closeEditModal() {
+  const modal = document.getElementById('cons-edit-modal');
+  if (modal) modal.classList.remove('cons-edit-modal--open');
+  editModalComplaintId = null;
+}
+
+function bindEditModalHandlers() {
+  const modal = document.getElementById('cons-edit-modal');
+  const step1 = document.getElementById('cons-edit-step1');
+  const step2 = document.getElementById('cons-edit-step2');
+  const step3 = document.getElementById('cons-edit-step3');
+  const companySel = document.getElementById('cons-edit-company');
+  const violatorSel = document.getElementById('cons-edit-violator');
+  const nextBtn = document.getElementById('cons-edit-next');
+  const saveBtn = document.getElementById('cons-edit-save');
+  const cancelBtn = document.getElementById('cons-edit-cancel');
+  const closeBtn = modal && modal.querySelector('.cons-edit-close');
+
+  if (companySel) {
+    companySel.addEventListener('change', () => {
+      const company = companySel.value;
+      fillViolatorSelect(violatorSel, editModalEmpl.employees, company, null);
+    });
+  }
+
+  function goNext() {
+    if (editModalStep === 1) {
+      const company = companySel && companySel.value;
+      if (!company) {
+        alert('Выберите компанию');
+        return;
+      }
+      fillViolatorSelect(violatorSel, editModalEmpl.employees, company, null);
+      step1.style.display = 'none';
+      step2.style.display = 'block';
+      step3.style.display = 'none';
+      editModalStep = 2;
+      nextBtn.style.display = 'inline-block';
+      saveBtn.style.display = 'none';
+      nextBtn.textContent = 'Далее';
+      if (backBtn) backBtn.style.display = 'inline-block';
+      violatorSel.focus();
+    } else if (editModalStep === 2) {
+      const violator = violatorSel && violatorSel.value;
+      if (!violator) {
+        alert('Выберите сотрудника (нарушителя)');
+        return;
+      }
+      step1.style.display = 'none';
+      step2.style.display = 'none';
+      step3.style.display = 'block';
+      editModalStep = 3;
+      nextBtn.style.display = 'none';
+      saveBtn.style.display = 'inline-block';
+      if (backBtn) backBtn.style.display = 'inline-block';
+    }
+  }
+
+  const backBtn = document.getElementById('cons-edit-back');
+  function goBack() {
+    if (editModalStep === 2) {
+      step1.style.display = 'block';
+      step2.style.display = 'none';
+      step3.style.display = 'none';
+      editModalStep = 1;
+      if (backBtn) backBtn.style.display = 'none';
+      companySel.focus();
+    } else if (editModalStep === 3) {
+      step1.style.display = 'none';
+      step2.style.display = 'block';
+      step3.style.display = 'none';
+      editModalStep = 2;
+      violatorSel.focus();
+    }
+  }
+
+  if (nextBtn) nextBtn.addEventListener('click', goNext);
+  if (backBtn) backBtn.addEventListener('click', goBack);
+
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      if (!editModalComplaintId) return;
+      const company = companySel && companySel.value;
+      const violator = violatorSel && violatorSel.value;
+      const cellEl = document.getElementById('cons-edit-cell');
+      const barcodeEl = document.getElementById('cons-edit-barcode');
+      const nomEl = document.getElementById('cons-edit-nomenclatureCode');
+      const productEl = document.getElementById('cons-edit-productName');
+      const productBarcodeEl = document.getElementById('cons-edit-productBarcode');
+      const handlingEl = document.getElementById('cons-edit-handlingUnitBarcode');
+      const payload = {
+        company: company || undefined,
+        violator: violator || undefined,
+        cell: cellEl && cellEl.value ? cellEl.value.trim() : undefined,
+        barcode: barcodeEl && barcodeEl.value ? barcodeEl.value.trim() : undefined,
+        nomenclatureCode: nomEl && nomEl.value ? nomEl.value.trim() : undefined,
+        productName: productEl && productEl.value ? productEl.value.trim() : undefined,
+        productBarcode: productBarcodeEl && productBarcodeEl.value ? productBarcodeEl.value.trim() : undefined,
+        handlingUnitBarcode: handlingEl && handlingEl.value ? handlingEl.value.trim() : undefined,
+        lookupDone: true,
+        lookupError: null,
+      };
+      try {
+        await saveComplaintLookup(editModalComplaintId, payload);
+        closeEditModal();
+        await loadComplaints();
+      } catch (err) {
+        console.error('save complaint edit', err);
+        alert('Ошибка сохранения: ' + (err.message || 'Попробуйте снова'));
+      }
+    });
+  }
+
+  if (cancelBtn) cancelBtn.addEventListener('click', closeEditModal);
+  if (closeBtn) closeBtn.addEventListener('click', closeEditModal);
+  if (modal) {
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeEditModal(); });
+  }
+}
+
+// Вызов привязки обработчиков модалки один раз при инициализации консолидации
+let editModalBound = false;
+
 // ─── Рендеринг ──────────────────────────────────────────────────────────────
 
 function renderComplaints() {
@@ -764,6 +1004,29 @@ function renderComplaints() {
   if (!container) return;
 
   const filtered = getFilteredComplaints();
+  const pageSize = complaintsPageSize || 10;
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (complaintsPage > totalPages) complaintsPage = totalPages;
+  if (complaintsPage < 1) complaintsPage = 1;
+  const startIdx = (complaintsPage - 1) * pageSize;
+  const pageItems = filtered.slice(startIdx, startIdx + pageSize);
+
+  // Пагинация UI
+  const pageInfo = document.getElementById('cons-page-info');
+  const pageSizeSel = document.getElementById('cons-page-size');
+  const prevBtn = document.getElementById('cons-page-prev');
+  const nextBtn = document.getElementById('cons-page-next');
+  const bar = pageInfo ? pageInfo.closest('.cons-pagination-bar') : null;
+  if (pageSizeSel) pageSizeSel.value = String(pageSize);
+  if (bar) bar.style.display = total ? '' : 'none';
+  if (pageInfo) {
+    const from = total ? (startIdx + 1) : 0;
+    const to = total ? Math.min(startIdx + pageSize, total) : 0;
+    pageInfo.textContent = total ? `Стр. ${complaintsPage}/${totalPages} • ${from}-${to} из ${total}` : '—';
+  }
+  if (prevBtn) prevBtn.disabled = complaintsPage <= 1;
+  if (nextBtn) nextBtn.disabled = complaintsPage >= totalPages;
 
   const totalEl = document.getElementById('cons-count-total');
   const newEl = document.getElementById('cons-count-new');
@@ -772,12 +1035,12 @@ function renderComplaints() {
   const selectedEl = document.getElementById('cons-count-selected');
   if (selectedEl) selectedEl.textContent = selectedComplaintIds.size;
 
-  if (filtered.length === 0) {
+  if (total === 0) {
     container.innerHTML = '<div class="cons-empty">Нет жалоб</div>';
     return;
   }
 
-  const rows = filtered.map(c => {
+  const rows = pageItems.map(c => {
     const photos = Array.isArray(c.photoFilenames) && c.photoFilenames.length > 0
       ? c.photoFilenames
       : (c.photoFilename ? [c.photoFilename] : []);
@@ -810,17 +1073,22 @@ function renderComplaints() {
       <td>${esc(c.nomenclatureCode || '—')}</td>
       <td>${esc(c.productName || '—')}</td>
       <td>${esc(c.violator || '—')}${lookupInfo}</td>
+      <td>${esc(c.company || '—')}</td>
       <td class="cons-td-date">${formatDate(c.operationCompletedAt)}</td>
       <td>${photoCell}</td>
       <td><span class="cons-status ${statusClass(c.status)}">${statusLabel(c.status)}</span></td>
       <td class="cons-actions">
-        <select class="cons-status-select" data-id="${esc(c.id)}">
-          <option value="new"${c.status === 'new' ? ' selected' : ''}>Новая</option>
-          <option value="in_progress"${c.status === 'in_progress' ? ' selected' : ''}>В работе</option>
-          <option value="resolved"${c.status === 'resolved' ? ' selected' : ''}>Решена</option>
-        </select>
-        <button class="btn btn-sm cons-btn-lookup" data-id="${esc(c.id)}" data-barcode="${esc(c.barcode)}" data-cell="${esc(c.cell)}" title="Поиск в WMS">&#x1f50d;</button>
-        <button class="btn btn-sm cons-btn-delete" data-id="${esc(c.id)}" title="Удалить">&times;</button>
+        <div class="cons-actions-col">
+          <select class="cons-status-select" data-id="${esc(c.id)}">
+            <option value="new"${c.status === 'new' ? ' selected' : ''}>Новая</option>
+            <option value="in_progress"${c.status === 'in_progress' ? ' selected' : ''}>В работе</option>
+            <option value="resolved"${c.status === 'resolved' ? ' selected' : ''}>Решена</option>
+          </select>
+          <div class="cons-actions-btns">
+            <button class="btn btn-sm cons-btn-lookup" data-id="${esc(c.id)}" data-barcode="${esc(c.barcode)}" data-cell="${esc(c.cell)}" title="Поиск в WMS">&#x1f50d;</button>
+            <button class="btn btn-sm cons-btn-edit" data-id="${esc(c.id)}" title="Редактировать">&#9998;</button>
+          </div>
+        </div>
       </td>
     </tr>`;
   }).join('');
@@ -837,6 +1105,7 @@ function renderComplaints() {
           <th>Артикул</th>
           <th>Товар</th>
           <th>Нарушитель</th>
+          <th>Компания</th>
           <th>Время нарушения</th>
           <th>Фото</th>
           <th>Статус</th>
@@ -896,14 +1165,11 @@ function attachHandlers(container) {
     });
   });
 
-  // Delete
-  container.querySelectorAll('.cons-btn-delete').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      if (!confirm('Удалить жалобу?')) return;
-      try {
-        await deleteComplaint(btn.dataset.id);
-        await loadComplaints();
-      } catch (err) { console.error('delete', err); }
+  // Edit (карандаш): открыть модалку редактирования
+  container.querySelectorAll('.cons-btn-edit').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const complaint = allComplaints.find(c => String(c.id) === String(btn.dataset.id));
+      if (complaint) openEditModal(complaint);
     });
   });
 

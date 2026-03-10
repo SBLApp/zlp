@@ -91,6 +91,19 @@
     }
     .msg--ok { background: var(--green-light); color: var(--green-dark); display: block; }
     .msg--err { background: #FEF2F2; color: #DC2626; display: block; }
+    .cell-row { display: flex; gap: 12px; align-items: stretch; }
+    .cell-row .cell-toggle { flex: 0 0 auto; display: flex; border: 1.5px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: #fff; }
+    .cell-toggle button {
+      padding: 11px 16px; border: none; background: #fff; font-family: var(--font); font-size: 14px; font-weight: 500;
+      color: var(--text-muted); cursor: pointer; transition: background .15s, color .15s;
+    }
+    .cell-toggle button.active { background: var(--green-light); color: var(--green-dark); }
+    .cell-toggle button:first-child { border-right: 1px solid var(--border); }
+    .cell-row .form-control { flex: 1; min-width: 0; }
+    .cell-fields { display: flex; gap: 8px; align-items: stretch; }
+    .cell-fields .form-control { flex: 1; min-width: 0; }
+    .cell-fields .form-control.cell-row-num { max-width: 44px; flex: 0 0 44px; text-align: center; }
+    .cell-fields .form-control.cell-place-num { max-width: 52px; flex: 0 0 52px; text-align: center; }
     @media (max-width: 640px) {
       body {
         padding: 12px;
@@ -138,12 +151,23 @@
 
     <form id="form" enctype="multipart/form-data">
       <div class="form-group">
-        <label for="cell" class="required">Место хранения (ячейка)</label>
-        <input class="form-control" type="text" id="cell" name="cell" placeholder="А-01-02-03" required autocomplete="off">
+        <label class="required">Место хранения (ячейка)</label>
+        <div class="cell-row">
+          <div class="cell-toggle" role="group" aria-label="Тип зоны">
+            <button type="button" id="cell-type-kds" data-prefix="KDS" title="Сухой">KDS</button>
+            <button type="button" id="cell-type-kdh" data-prefix="KDH" title="Холод" class="active">KDH</button>
+          </div>
+          <div class="cell-fields">
+            <input class="form-control cell-row-num" type="text" id="cell-row" placeholder="4" maxlength="1" autocomplete="off" inputmode="numeric" title="Ряд (1 цифра, сохраняется)">
+            <input class="form-control cell-place-num" type="text" id="cell-place" placeholder="44" maxlength="2" required autocomplete="off" inputmode="numeric" title="Место в ряду (2 цифры)">
+          </div>
+        </div>
+        <input type="hidden" name="cell" id="cell">
+        <small style="display:block;margin-top:4px;color:var(--text-muted);font-size:12px;">Ряд и место в ряду. Итог: <strong id="cell-preview">KDH-</strong></small>
       </div>
       <div class="form-group">
-        <label for="barcode" class="required">Штрихкод товара или ЕО</label>
-        <input class="form-control" type="text" id="barcode" name="barcode" inputmode="numeric" placeholder="ШК товара или ЕО" required autocomplete="off">
+        <label for="barcode" class="required">Штрихкод товара</label>
+        <input class="form-control" type="text" id="barcode" name="barcode" inputmode="numeric" placeholder="отсканируй ШК товара" required autocomplete="off">
       </div>
       <div class="form-group">
         <label for="employeeName">Ваше имя (необязательно)</label>
@@ -163,9 +187,56 @@
     var msgEl = document.getElementById('msg');
     var btnSubmit = document.getElementById('btn-submit');
 
-    // Порядок полей для перехода по Enter (сканер вводит значение + Enter — переходим в следующее поле, не отправляем форму)
+    var cellRow = document.getElementById('cell-row');
+    var cellPlace = document.getElementById('cell-place');
+    var cellHidden = document.getElementById('cell');
+    var cellPreview = document.getElementById('cell-preview');
+    var STORAGE_KEY_ROW = 'consolidation_cell_row';
+    var STORAGE_KEY_PREFIX = 'consolidation_storage_prefix';
+    var STORAGE_KEY_EMPLOYEE_NAME = 'consolidation_employee_name';
+    var storagePrefix = localStorage.getItem(STORAGE_KEY_PREFIX) || 'KDH';
+
+    function updateCellPreview() {
+      var row = (cellRow && cellRow.value) ? cellRow.value.trim() : '';
+      var place = (cellPlace && cellPlace.value) ? cellPlace.value.trim() : '';
+      var part = [row, place].filter(Boolean).join('-');
+      if (cellPreview) cellPreview.textContent = storagePrefix + (part ? '-' + part : '-');
+    }
+
+    (function restoreSaved() {
+      var saved = localStorage.getItem(STORAGE_KEY_ROW);
+      if (saved && cellRow) cellRow.value = saved;
+      var pref = localStorage.getItem(STORAGE_KEY_PREFIX);
+      if (pref === 'KDS' || pref === 'KDH') {
+        storagePrefix = pref;
+        document.querySelectorAll('.cell-toggle button').forEach(function(b) {
+          b.classList.toggle('active', b.getAttribute('data-prefix') === pref);
+        });
+      }
+      var savedName = localStorage.getItem(STORAGE_KEY_EMPLOYEE_NAME);
+      if (savedName != null && savedName !== '') {
+        var nameEl = document.getElementById('employeeName');
+        if (nameEl) nameEl.value = savedName;
+      }
+      updateCellPreview();
+    })();
+
+    document.querySelectorAll('.cell-toggle button').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.cell-toggle button').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        storagePrefix = btn.getAttribute('data-prefix') || 'KDH';
+        localStorage.setItem(STORAGE_KEY_PREFIX, storagePrefix);
+        updateCellPreview();
+      });
+    });
+    if (cellRow) { cellRow.addEventListener('input', updateCellPreview); cellRow.addEventListener('change', updateCellPreview); }
+    if (cellPlace) { cellPlace.addEventListener('input', updateCellPreview); cellPlace.addEventListener('change', updateCellPreview); }
+
+    // Порядок полей: ряд → место → штрихкод → имя → фото
     var focusOrder = [
-      document.getElementById('cell'),
+      cellRow,
+      cellPlace,
       document.getElementById('barcode'),
       document.getElementById('employeeName'),
       document.getElementById('photo')
@@ -183,6 +254,16 @@
 
     form.addEventListener('submit', function(e) {
       e.preventDefault();
+      var row = (cellRow && cellRow.value) ? cellRow.value.trim() : '';
+      var place = (cellPlace && cellPlace.value) ? cellPlace.value.trim() : '';
+      if (!row || !place) {
+        msgEl.textContent = 'Введите ряд и место в ряду';
+        msgEl.className = 'msg msg--err';
+        msgEl.style.display = 'block';
+        return;
+      }
+      if (cellHidden) cellHidden.value = storagePrefix + '-' + row + '-' + place;
+
       msgEl.className = 'msg';
       msgEl.style.display = 'none';
       btnSubmit.disabled = true;
@@ -193,9 +274,21 @@
         .then(function(r) { return r.json(); })
         .then(function(data) {
           if (data.ok) {
+            localStorage.setItem(STORAGE_KEY_ROW, row);
+            localStorage.setItem(STORAGE_KEY_PREFIX, storagePrefix);
+            var nameEl = document.getElementById('employeeName');
+            if (nameEl && nameEl.value && nameEl.value.trim() !== '') {
+              localStorage.setItem(STORAGE_KEY_EMPLOYEE_NAME, nameEl.value.trim());
+            }
             msgEl.textContent = 'Жалоба отправлена! Спасибо.';
             msgEl.className = 'msg msg--ok';
             form.reset();
+            cellRow.value = row;
+            if (nameEl) {
+              var savedName = localStorage.getItem(STORAGE_KEY_EMPLOYEE_NAME);
+              if (savedName) nameEl.value = savedName;
+            }
+            updateCellPreview();
           } else {
             msgEl.textContent = 'Ошибка: ' + (data.error || 'Попробуйте снова');
             msgEl.className = 'msg msg--err';

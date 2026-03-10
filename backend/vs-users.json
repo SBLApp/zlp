@@ -91,6 +91,20 @@
         "monitor"
       ],
       "telegramChatId": "544569923"
+    },
+    {
+      "login": "Muving",
+      "role": "manager",
+      "companyIds": [
+        "Мувинг"
+      ],
+      "modules": [
+        "stats",
+        "monitor",
+        "consolidation"
+      ],
+      "allowWithoutToken": true,
+      "passwordHash": "0865e908dc95d1b6e7081703c9f6cc58:e6be66bffb08986595d5547478b3812cffb934aa82f3d2064678a1257c900a25e7662cec9d75f35b56a00eb3b40b6f9621b2129028ac19b8b123049bf8ee1568"
     }
   ]
 }

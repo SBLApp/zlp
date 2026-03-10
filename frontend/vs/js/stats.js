@@ -299,6 +299,23 @@ export function filterHoursToPassed(selectedDate, shiftFilter) {
   return order.filter(col => col >= 22 || col <= currentHour);
 }
 
+/**
+ * Прошедшие часы + текущий час (колонка текущего интервала). В 15:56 показываем 10,11,12,13,14,15,16.
+ */
+export function getHoursPassedIncludingCurrent(selectedDate, shiftFilter) {
+  const order = shiftFilter === 'night' ? NIGHT_HOURS : DAY_HOURS;
+  const passed = filterHoursToPassed(selectedDate, shiftFilter);
+  const today = typeof selectedDate === 'string' && selectedDate === getTodayStr();
+  if (!today) return passed;
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentCol = shiftFilter === 'day' ? currentHour + 1 : (currentHour + 1) % 24;
+  if (order.includes(currentCol) && !passed.includes(currentCol)) {
+    return shiftFilter === 'day' ? [...passed, currentCol].sort((a, b) => a - b) : order.filter(col => passed.includes(col) || col === currentCol);
+  }
+  return passed;
+}
+
 function getTodayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -306,6 +323,8 @@ function getTodayStr() {
 
 /**
  * Данные «Сотрудники по часам»: только прошедшие часы, с компанией, сгруппированы по компании (для отправки в Telegram).
+ * allRows — все сотрудники: компании идут подряд (по убыванию суммы задач), внутри компании — СЗ по убыванию.
+ * companiesOrder — компании по убыванию суммы задач (для порядка отправки в Telegram).
  */
 export function getHourlyByEmployeeGroupedByCompany(items, shiftFilter, emplMap, selectedDate) {
   const { hours: allHours, rows } = calcHourlyByEmployee(items, shiftFilter);
@@ -321,7 +340,88 @@ export function getHourlyByEmployeeGroupedByCompany(items, shiftFilter, emplMap,
   for (const arr of byCompany.values()) {
     arr.sort((a, b) => (b.total - a.total));
   }
-  return { hours, byCompany: Object.fromEntries(byCompany) };
+  const companyTotals = new Map();
+  for (const [c, arr] of byCompany) {
+    companyTotals.set(c, arr.reduce((s, r) => s + r.total, 0));
+  }
+  const companiesOrder = [...byCompany.keys()].sort((a, b) => (companyTotals.get(b) || 0) - (companyTotals.get(a) || 0));
+  // Общий список: компании вместе, внутри компании — от макс. СЗ к мин.
+  const allRows = companiesOrder.flatMap(c => byCompany.get(c) || []);
+  return { hours, byCompany: Object.fromEntries(byCompany), allRows, companiesOrder };
+}
+
+/**
+ * Данные для таблицы сводки по компаниям: Компания, сотруднико, СЗЧ, [часы 10..текущий], Итог.
+ * СЗЧ = среднее задач в час = Итог / сотруднико / кол-во прошедших часов (без текущего).
+ * hoursDisplay = прошедшие часы + текущий (в 15:56 → 10,11,12,13,14,15,16).
+ */
+export function getCompanySummaryTableData(items, shiftFilter, emplMap, selectedDate) {
+  const { hours, byCompany, companiesOrder } = getHourlyByEmployeeGroupedByCompany(items, shiftFilter, emplMap, selectedDate);
+  const hoursDisplay = getHoursPassedIncludingCurrent(selectedDate, shiftFilter);
+  const passedHours = hours.length;
+  const rows = companiesOrder.map(c => {
+    const companyRows = byCompany[c] || [];
+    const employeesCount = companyRows.length;
+    const totalTasks = companyRows.reduce((s, r) => s + r.total, 0);
+    const szch = passedHours > 0 && employeesCount > 0 ? Math.round(totalTasks / employeesCount / passedHours) : 0;
+    const byHour = {};
+    for (const col of hoursDisplay) {
+      byHour[col] = companyRows.reduce((s, r) => s + (r.byHour && r.byHour[col] ? r.byHour[col] : 0), 0);
+    }
+    return { companyName: c, employeesCount, szch, totalTasks, byHour };
+  });
+  return { rows, hoursDisplay };
+}
+
+/**
+ * Рендер таблицы сводки по компаниям (Компания, сотруднико, СЗЧ, 10…текущий час, Итог) и подписи формул.
+ */
+export function renderCompanySummaryTable(rows, hoursDisplay = []) {
+  const container = el('company-summary-table-wrap');
+  if (!container) return;
+  if (!rows.length) {
+    container.innerHTML = '<div class="empty-row" style="padding:16px;text-align:center;color:var(--text-muted)">Нет данных</div>';
+    return;
+  }
+  const thHours = (hoursDisplay || []).map(col => `<th class="cs-th-hour" title="${String(col).padStart(2, '0')}:00">${col}</th>`).join('');
+  const trRows = rows.map(r => {
+    const cellsHours = (hoursDisplay || []).map(col => `<td class="cs-td-num cs-td-hour">${r.byHour && r.byHour[col] != null ? r.byHour[col] : ''}</td>`).join('');
+    return `
+    <tr>
+      <td class="cs-td-company">${escHtml(r.companyName)}</td>
+      <td class="cs-td-num">${r.employeesCount}</td>
+      <td class="cs-td-num">${r.szch}</td>
+      ${cellsHours}
+      <td class="cs-td-num">${r.totalTasks}</td>
+    </tr>
+  `;
+  }).join('');
+  container.innerHTML = `
+    <table class="company-summary-table">
+      <thead>
+        <tr>
+          <th class="cs-th-company">Компания</th>
+          <th class="cs-th-num">Сотрудников</th>
+          <th class="cs-th-num">СЗЧ</th>
+          ${thHours}
+          <th class="cs-th-num">Итог</th>
+        </tr>
+      </thead>
+      <tbody>${trRows}</tbody>
+    </table>
+    <div class="company-summary-formulas">
+      <div class="cs-formula-row">
+        <span class="cs-formula-label">Считаем количество сотрудников</span>
+      </div>
+      <div class="cs-formula-row">
+        <span class="cs-formula-label">СЗЧ — среднее задач в час:</span>
+        <span class="cs-formula-text">сумма задач ÷ количество сотрудников ÷ количество прошедших часов (с 9:00 для дневной смены). Пример: Итог ∕ Сотрудников ∕ часы = СЗЧ</span>
+      </div>
+      <div class="cs-formula-row">
+        <span class="cs-formula-label">Колонки по часам — сумма выполненных задач за каждый час (прошедшие + текущий). Итог — СЗ за все часы у компании.</span>
+      </div>
+    </div>
+  `;
 }
 
 /** Стиль первой колонки (ФИО у левого края) — инлайн, чтобы html2canvas не терял при рендере */
@@ -358,6 +458,44 @@ export function buildHourlyTableHtmlForCompany(companyName, rows, hours, dateStr
       <div class="he-telegram-meta" style="font-size:12px;color:#6b7280;margin-bottom:10px;">${escHtml(dateStr)} • ${escHtml(shiftLabel)}</div>
       <table style="border-collapse:collapse;table-layout:fixed;width:100%;font-size:13px;">
         <thead><tr><th style="${HE_NAME_COL_STYLE}background:#f5f7fa;font-size:12px;">Исполнитель</th>${thHours}<th style="${thTotalStyle}">Итого</th></tr></thead>
+        <tbody>${trRows}</tbody>
+      </table>
+    </div>`;
+}
+
+const HE_COMPANY_COL_STYLE = 'width:180px;min-width:180px;max-width:180px;text-align:left;padding:6px 8px;border:1px solid #DDE2EA;background:#fff;font-size:12px;box-sizing:border-box;';
+
+/**
+ * HTML таблицы «Весь список по часам» со всеми сотрудниками (для скриншота в Telegram).
+ * Колонки: Компания, Исполнитель, часы…, Итого. Сортировка: задачи по убыванию, компания по убыванию.
+ */
+export function buildHourlyTableHtmlFullList(rows, hours, dateStr, shiftLabel) {
+  const hourLabel = (col) => {
+    const start = (col + 23) % 24;
+    return `${String(start).padStart(2, '0')}–${String(col).padStart(2, '0')}`;
+  };
+  const thHours = hours.map(col => `<th style="width:46px;padding:6px 8px;border:1px solid #DDE2EA;background:#f5f7fa;font-size:12px;text-align:center;" title="${hourLabel(col)}">${String(col).padStart(2, '0')}</th>`).join('');
+  const thTotalStyle = 'width:56px;padding:6px 8px;border:1px solid #DDE2EA;background:#f5f7fa;font-size:12px;text-align:center;';
+  const szCellClass = (v) => {
+    if (v < 50) return 'he-sz-red';
+    if (v <= 75) return 'he-sz-mid';
+    return 'he-sz-white';
+  };
+  const trRows = rows.map(r => {
+    const cells = hours.map(col => {
+      const v = r.byHour[col] || 0;
+      const cl = szCellClass(v);
+      return `<td class="he-td-val ${cl}" style="width:46px;padding:6px 8px;border:1px solid #DDE2EA;text-align:center;">${v > 0 ? v : ''}</td>`;
+    }).join('');
+    const totalStyle = 'width:56px;padding:6px 8px;border:1px solid #DDE2EA;text-align:center;font-weight:600;';
+    return `<tr><th scope="row" style="${HE_COMPANY_COL_STYLE}">${escHtml(r.company)}</th><th scope="row" style="${HE_NAME_COL_STYLE}">${escHtml(r.name)}</th>${cells}<td style="${totalStyle}">${r.total}</td></tr>`;
+  }).join('');
+  return `
+    <div class="he-telegram-wrap" style="padding:12px;background:#fff;font-family:Inter,sans-serif;">
+      <div class="he-telegram-title" style="font-size:16px;font-weight:700;margin-bottom:4px;">Весь список по часам</div>
+      <div class="he-telegram-meta" style="font-size:12px;color:#6b7280;margin-bottom:10px;">${escHtml(dateStr)} • ${escHtml(shiftLabel)} • Компании подряд, внутри компании — СЗ по убыванию</div>
+      <table style="border-collapse:collapse;table-layout:fixed;width:100%;font-size:13px;">
+        <thead><tr><th style="${HE_COMPANY_COL_STYLE}background:#f5f7fa;font-size:12px;">Компания</th><th style="${HE_NAME_COL_STYLE}background:#f5f7fa;font-size:12px;">Исполнитель</th>${thHours}<th style="${thTotalStyle}">Итого</th></tr></thead>
         <tbody>${trRows}</tbody>
       </table>
     </div>`;
