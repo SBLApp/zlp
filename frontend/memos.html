@@ -134,6 +134,14 @@
     .doc-list li { margin-bottom: 4px; }
     .doc-sign { margin-top: 18px; }
     .doc-sign p { margin: 4px 0; }
+    .doc-right { text-align: right; margin-bottom: 14px; }
+    .doc-right p { margin: 2px 0; }
+    .doc-sign-row { display: flex; justify-content: space-between; margin-top: 18px; gap: 24px; }
+    .doc-tc-sign { flex: 1; }
+    .doc-tc-sign p { margin: 4px 0; }
+    .doc-sign-inline { margin-top: 6px; }
+    .doc-tc-ack { flex: 1; text-align: right; max-width: 50%; margin-top: 0; }
+    .doc-tc-ack p { margin: 2px 0; }
     .note {
       font-size: 12px;
       color: var(--warn);
@@ -143,6 +151,40 @@
       padding: 8px 10px;
       margin-bottom: 10px;
     }
+    .memos-settings-panel {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+    }
+    .memos-settings-title { margin: 0 0 4px 0; font-size: 15px; }
+    .memos-settings-desc { margin: 0 0 10px 0; font-size: 12px; color: var(--muted); }
+    .supervisors-list {
+      list-style: none;
+      margin: 0 0 12px 0;
+      padding: 0;
+    }
+    .supervisors-list li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      margin-bottom: 6px;
+      background: #f5f8fb;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    .supervisors-list .btn-remove {
+      padding: 2px 8px;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--muted);
+    }
+    .supervisors-list .btn-remove:hover { color: #c00; border-color: #c00; }
+    .supervisors-add-btn-wrap { display: flex; align-items: flex-end; }
+    .supervisors-add-btn-wrap .btn { flex: 0 0 auto; }
     .hidden { display: none; }
     @media (max-width: 980px) {
       .grid { grid-template-columns: 1fr; }
@@ -193,6 +235,7 @@
         <p class="sub">Шаблоны с привязкой к должностным инструкциям (разделы 3 и 5 ДИ)</p>
       </div>
       <div class="top-actions">
+        <button class="btn" id="btn-settings" type="button">⚙ Настройки</button>
         <button class="btn" id="btn-clear">Очистить</button>
         <button class="btn btn-alt" id="btn-copy">Скопировать</button>
         <button class="btn" id="btn-print">Печать</button>
@@ -210,6 +253,7 @@
           <div class="tabs">
             <button class="tab active" data-kind="bidu">Служебная: BIDU</button>
             <button class="tab" data-kind="surplus">Служебная: Излишки</button>
+            <button class="tab" data-kind="tc">Служебная ТС</button>
             <button class="tab" data-kind="exp">Объяснительная</button>
           </div>
 
@@ -265,6 +309,77 @@
             </div>
           </div>
 
+          <div id="form-tc" class="hidden">
+            <div class="note">Служебная записка о некорректной комплектации (по образцу ТС).</div>
+            <div class="row">
+              <div>
+                <label for="tc-company">Компания сотрудников</label>
+                <input id="tc-company" type="text" placeholder="ООО «2 Колеса»">
+              </div>
+            </div>
+            <div class="row two">
+              <div>
+                <label for="tc-violator">ФИО нарушителя</label>
+                <input id="tc-violator" type="text" placeholder="Ходжамуродов Абдулло Зиёвиддинович">
+              </div>
+              <div>
+                <label for="tc-task-area">Где выполнял задачу</label>
+                <select id="tc-task-area" class="form-control">
+                  <option value="storage">В хранении</option>
+                  <option value="kdk">В КДК</option>
+                </select>
+              </div>
+            </div>
+            <div class="row">
+              <div>
+                <label for="tc-product">Наименование товара</label>
+                <input id="tc-product" type="text" placeholder="Суп-пюре Creative Kitchen Сырный на основе овощей, 260 г">
+              </div>
+            </div>
+            <div class="row two">
+              <div>
+                <label for="tc-article">УТ (артикул)</label>
+                <input id="tc-article" type="text" placeholder="УТ-00201035">
+              </div>
+              <div>
+                <label for="tc-quantity">Количество, шт</label>
+                <input id="tc-quantity" type="text" placeholder="8">
+              </div>
+            </div>
+            <div class="row two">
+              <div>
+                <label for="tc-place">Место</label>
+                <input id="tc-place" type="text" placeholder="Ячейка / адрес">
+              </div>
+              <div>
+                <label for="tc-eo">ЕО</label>
+                <input id="tc-eo" type="text" placeholder="01220014-2109">
+              </div>
+            </div>
+            <div class="row">
+              <div>
+                <label for="tc-time">Время (опционально)</label>
+                <input id="tc-time" type="text" placeholder="14:30">
+              </div>
+            </div>
+            <div class="row two">
+              <div>
+                <label for="tc-date-incident">Дата нарушения</label>
+                <input id="tc-date-incident" type="date">
+              </div>
+              <div>
+                <label for="tc-date-memo">Дата служебной записки</label>
+                <input id="tc-date-memo" type="date">
+              </div>
+            </div>
+            <div class="row">
+              <div>
+                <label for="tc-brigadier">Бригадир (для блока ознакомления)</label>
+                <input id="tc-brigadier" type="text" placeholder="Бригадир ООО «2 Колеса»">
+              </div>
+            </div>
+          </div>
+
           <div id="form-exp" class="hidden">
             <div class="note">Объяснительная заполняется от лица сотрудника.</div>
             <div class="row">
@@ -297,14 +412,38 @@
             </div>
           </div>
 
+          <div class="row">
+            <div>
+              <label for="author-select">Начальник смены (составил)</label>
+              <select id="author-select">
+                <option value="">— Выберите или введите ниже —</option>
+              </select>
+            </div>
+          </div>
           <div class="row two">
             <div>
-              <label for="author">Составил/подписант</label>
+              <label for="author">ФИО составителя</label>
               <input id="author" type="text" placeholder="Петров П.П.">
             </div>
             <div>
               <label for="author-role">Должность составителя</label>
-              <input id="author-role" type="text" placeholder="Старший смены">
+              <input id="author-role" type="text" placeholder="Начальник смены">
+            </div>
+          </div>
+
+          <div id="memos-settings-panel" class="memos-settings-panel hidden">
+            <h3 class="memos-settings-title">Начальники смен</h3>
+            <p class="memos-settings-desc">Добавьте ФИО — они появятся в списке выбора выше, чтобы не вводить каждый раз.</p>
+            <ul id="supervisors-list" class="supervisors-list"></ul>
+            <div class="row two supervisors-add">
+              <div>
+                <label for="supervisor-name">ФИО начальника смены</label>
+                <input id="supervisor-name" type="text" placeholder="Иванов И.И.">
+              </div>
+              <div class="supervisors-add-btn-wrap">
+                <label>&nbsp;</label>
+                <button class="btn btn-brand" id="btn-add-supervisor" type="button">Добавить</button>
+              </div>
             </div>
           </div>
 

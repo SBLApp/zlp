@@ -41,6 +41,20 @@ function formatDate(iso) {
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function formatDateOnly(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
+}
+
+function formatTimeOnly(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function statusLabel(status) {
   const map = { new: 'Новая', in_progress: 'В работе', resolved: 'Решена' };
   return map[status] || status;
@@ -515,6 +529,8 @@ export function initConsolidation() {
 
   const sendTgBtn = document.getElementById('cons-send-telegram-btn');
   if (sendTgBtn) sendTgBtn.addEventListener('click', () => sendSelectedToTelegram(sendTgBtn));
+  const printSzBtn = document.getElementById('cons-print-sz-btn');
+  if (printSzBtn) printSzBtn.addEventListener('click', printSelectedServiceNotes);
   const bulkStatusBtn = document.getElementById('cons-bulk-apply-status');
   if (bulkStatusBtn) bulkStatusBtn.addEventListener('click', () => bulkApplyStatus(bulkStatusBtn));
   const bulkLookupBtn = document.getElementById('cons-bulk-lookup');
@@ -597,6 +613,8 @@ export function initConsolidation() {
       renderComplaints();
     });
   }
+
+  fillSzSupervisorSelect();
 }
 
 async function lookupAll() {
@@ -690,6 +708,181 @@ async function sendSelectedToTelegram(btn) {
 
 function getSelectedComplaints() {
   return allComplaints.filter(c => selectedComplaintIds.has(String(c.id)));
+}
+
+// ─── Печать служебной записки по выбранным нарушениям ───────────────────────
+
+const SZ_RECIPIENT = 'Геращенко И.С.';
+const SZ_ORG = 'СТПС ООО «СберЛогистика»';
+
+/** Канонические названия компаний для СЗ (ООО "Название") */
+const SZ_COMPANY_NAMES = {
+  'два колеса': 'ООО "Два Колеса"',
+  '2 колеса': 'ООО "Два Колеса"',
+  'ооо "два колеса"': 'ООО "Два Колеса"',
+  'мувинг': 'ООО "Мувинговая компания"',
+  'мувинговая': 'ООО "Мувинговая компания"',
+  'мувинговая компания': 'ООО "Мувинговая компания"',
+  'ооо "мувинговая компания"': 'ООО "Мувинговая компания"',
+  'градус': 'ООО "Градус"',
+  'ооо "градус"': 'ООО "Градус"',
+  'эни ком сервис': 'ООО "Эни Ком Сервис"',
+  'эни сервис ком': 'ООО "Эни Ком Сервис"',
+  'эск': 'ООО "Эни Ком Сервис"',
+  'ооо "эни ком сервис"': 'ООО "Эни Ком Сервис"',
+};
+
+function formatCompanyForSz(raw) {
+  if (raw == null || String(raw).trim() === '') return '—';
+  const key = String(raw).trim().toLowerCase();
+  return SZ_COMPANY_NAMES[key] || (key.startsWith('ооо "') ? raw.trim() : `ООО "${raw.trim()}"`);
+}
+
+/** Возвращает фразу для СЗ: "выполняя задачу в хранении" или "выполнял задачу в КДК" */
+function getTaskAreaPhrase(c) {
+  if (c.taskArea === 'kdk') return 'выполнял задачу в КДК';
+  if (c.taskArea === 'storage') return 'выполняя задачу в хранении';
+  const op = (c.operationType || '').toUpperCase();
+  if (op === 'PICK_BY_LINE' || op.indexOf('PALLET') >= 0) return 'выполнял задачу в КДК';
+  return 'выполняя задачу в хранении';
+}
+
+const MEMOS_SUPERVISORS_KEY = 'memos_supervisors';
+
+function getSupervisorsFromStorage() {
+  try {
+    const raw = localStorage.getItem(MEMOS_SUPERVISORS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function fillSzSupervisorSelect() {
+  const sel = document.getElementById('cons-sz-supervisor');
+  if (!sel) return;
+  const list = getSupervisorsFromStorage();
+  const currentVal = sel.value;
+  const attrEsc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  sel.innerHTML = '<option value="">— Выберите —</option>' +
+    list.map(name => '<option value="' + attrEsc(name) + '">' + esc(name) + '</option>').join('');
+  if (list.indexOf(currentVal) !== -1) sel.value = currentVal;
+}
+
+function buildServiceNoteSection(c, uploadsBaseUrl, supervisorName) {
+  const company = formatCompanyForSz(c.company);
+  const violator = (c.violator != null && String(c.violator).trim() !== '') ? c.violator : '—';
+  const dateStr = formatDateOnly(c.operationCompletedAt || c.createdAt);
+  const timeStr = formatTimeOnly(c.operationCompletedAt || c.createdAt);
+  const productName = (c.productName != null && String(c.productName).trim() !== '') ? c.productName : '—';
+  const productBarcode = (c.productBarcode != null && String(c.productBarcode).trim() !== '') ? c.productBarcode : (c.barcode != null && String(c.barcode).trim() !== '') ? c.barcode : '—';
+  const eo = (c.handlingUnitBarcode != null && String(c.handlingUnitBarcode).trim() !== '') ? c.handlingUnitBarcode : (c.barcode != null && String(c.barcode).trim() !== '') ? c.barcode : '—';
+  const cell = (c.cell != null && String(c.cell).trim() !== '') ? c.cell : '—';
+  const quantity = (c.quantity != null && String(c.quantity).trim() !== '') ? c.quantity : '1';
+  const utDisplay = (c.nomenclatureCode != null && String(c.nomenclatureCode).trim() !== '') ? c.nomenclatureCode : '—';
+  const supervisor = (supervisorName != null && String(supervisorName).trim() !== '') ? String(supervisorName).trim() : '';
+  const photos = Array.isArray(c.photoFilenames) && c.photoFilenames.length > 0 ? c.photoFilenames : (c.photoFilename ? [c.photoFilename] : []);
+  const photoUrls = photos.map(name => uploadsBaseUrl + encodeURIComponent(name));
+  const imgs = photoUrls.map(url => `<img src="${url}" alt="Фото" class="sz-photo" crossorigin="">`).join('');
+  const utBarcode = productBarcode !== '—' ? `ШК${esc(productBarcode)}` : '—';
+  return `
+    <div class="sz-page">
+      <div class="sz-header-right">
+        <p>Начальнику склада</p>
+        <p>${esc(SZ_ORG)}</p>
+        <p>${esc(SZ_RECIPIENT)}</p>
+        <p>От начальника смены</p>
+        <p>${supervisor ? esc(supervisor) : '________________'}</p>
+      </div>
+      <div class="sz-title">СЛУЖЕБНАЯ ЗАПИСКА</div>
+      <div class="sz-subtitle">О выявленных нарушениях в процессе работы</div>
+      <p class="sz-p">Настоящим сообщаю, что <strong>${esc(dateStr)}</strong>, со стороны сотрудника ${esc(company)} были выявлены следующие нарушения:</p>
+      <p class="sz-p sz-p-noident">За сотрудником <strong>${esc(violator)}</strong></p>
+      <p class="sz-p sz-p-noident">выявлено нарушение по п.2 приложения №4 от 01.01.2025, а именно нарушение формирования отправления товара:</p>
+      <p class="sz-p sz-p-noident">«<strong>${esc(productName)}</strong>»</p>
+      <p class="sz-p sz-p-noident"><strong>${esc(utDisplay)}</strong> / ${utBarcode}</p>
+      <p class="sz-p sz-p-noident"><strong>в количестве:</strong> ${esc(quantity)} шт</p>
+      <p class="sz-p sz-p-noident"><strong>Место:</strong> ${esc(cell)}</p>
+      <p class="sz-p sz-p-noident"><strong>EO:</strong> ${esc(eo)}</p>
+      <p class="sz-p sz-p-noident"><strong>Время:</strong> ${esc(dateStr)} ${esc(timeStr)}</p>
+      <div class="sz-sign-row">
+        <div class="sz-sign">
+          <p><strong>Начальник смены</strong></p>
+          <p>Подпись: __________________</p>
+          <p>ФИО: ${supervisor ? esc(supervisor) : '__________________'}</p>
+          <p>Дата: ${dateStr ? esc(dateStr) : '__________________'}</p>
+          <p>Подпись: __________________</p>
+        </div>
+        <div class="sz-ack">
+          <p>Со служебной запиской ознакомлен</p>
+          <p>Нарушения подтверждаю</p>
+          <p><strong>Бригадир ${esc(company)}</strong></p>
+          <p>Подпись: __________________ &nbsp; ФИО: __________________</p>
+        </div>
+      </div>
+      ${photoUrls.length > 0 ? `<div class="sz-photos">${imgs}</div>` : ''}
+    </div>`;
+}
+
+function printSelectedServiceNotes() {
+  const selected = getSelectedComplaints();
+  if (selected.length === 0) {
+    alert('Отметьте галочками жалобы для печати СЗ');
+    return;
+  }
+  fillSzSupervisorSelect();
+  const supervisorEl = document.getElementById('cons-sz-supervisor');
+  let supervisorName = supervisorEl && supervisorEl.value ? supervisorEl.value.trim() : '';
+  if (!supervisorName) {
+    const list = getSupervisorsFromStorage();
+    if (list.length > 0) {
+      supervisorName = list[0];
+      if (supervisorEl) supervisorEl.value = list[0];
+    }
+  }
+  const origin = window.location.origin || '';
+  const uploadsBaseUrl = origin + '/api/consolidation/uploads/';
+  const sections = selected.map(c => buildServiceNoteSection(c, uploadsBaseUrl, supervisorName)).join('');
+  const html = `<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Служебные записки</title>
+  <style>
+    @page { size: A4; margin: 20mm; }
+    body { font-family: "Times New Roman", serif; font-size: 12pt; line-height: 1.45; color: #000; margin: 0; padding: 16px; }
+    .sz-page { page-break-after: always; padding-bottom: 20px; }
+    .sz-page:last-child { page-break-after: auto; }
+    .sz-header-right { text-align: right; margin-bottom: 14px; }
+    .sz-header-right p { margin: 2px 0; }
+    .sz-title { text-align: center; font-weight: 700; margin: 8px 0 4px; }
+    .sz-subtitle { text-align: center; margin-bottom: 12px; }
+    .sz-p { text-align: justify; text-indent: 1.25cm; margin: 0 0 8px 0; }
+    .sz-p-noident { text-indent: 0; }
+    .sz-sign-row { display: flex; justify-content: space-between; margin-top: 18px; gap: 24px; }
+    .sz-sign { flex: 1; }
+    .sz-sign p { margin: 4px 0; }
+    .sz-sign-inline { margin-top: 6px; }
+    .sz-ack { flex: 1; text-align: right; max-width: 50%; }
+    .sz-ack p { margin: 2px 0; }
+    .sz-photos { margin-top: 16px; height: 230mm; display: flex; flex-direction: column; gap: 0; page-break-inside: avoid; }
+    .sz-photo { width: 100%; flex: 1; min-height: 60mm; object-fit: cover; display: block; border: 1px solid #ccc; box-sizing: border-box; }
+  </style>
+</head>
+<body>${sections}</body>
+</html>`;
+  const w = window.open('', '_blank');
+  if (!w) {
+    alert('Разрешите всплывающие окна для печати');
+    return;
+  }
+  w.document.write(html);
+  w.document.close();
+  w.onload = () => {
+    w.focus();
+    w.print();
+    w.afterprint = () => w.close();
+  };
 }
 
 async function bulkApplyStatus(btn) {
@@ -795,7 +988,6 @@ function getFilteredComplaints() {
 
 let editModalComplaintId = null;
 let editModalEmpl = { employees: [], companies: [] };
-let editModalStep = 1;
 
 async function fetchEmpl() {
   const r = await fetch('/api/empl');
@@ -805,36 +997,24 @@ async function fetchEmpl() {
 
 function openEditModal(complaint) {
   editModalComplaintId = complaint.id;
-  editModalStep = 1;
   const modal = document.getElementById('cons-edit-modal');
-  const step1 = document.getElementById('cons-edit-step1');
-  const step2 = document.getElementById('cons-edit-step2');
-  const step3 = document.getElementById('cons-edit-step3');
   const companySel = document.getElementById('cons-edit-company');
   const violatorSel = document.getElementById('cons-edit-violator');
-  const nextBtn = document.getElementById('cons-edit-next');
   const saveBtn = document.getElementById('cons-edit-save');
-  if (!modal || !step1 || !companySel) return;
-
-  step1.style.display = 'block';
-  step2.style.display = 'none';
-  step3.style.display = 'none';
-  nextBtn.style.display = 'inline-block';
-  saveBtn.style.display = 'none';
-  nextBtn.textContent = 'Далее';
-  const backBtn = document.getElementById('cons-edit-back');
-  if (backBtn) backBtn.style.display = 'none';
+  if (!modal || !companySel || !violatorSel || !saveBtn) return;
 
   companySel.innerHTML = '<option value="">— Выберите компанию —</option>';
-  violatorSel.innerHTML = '<option value="">— Сначала выберите компанию —</option>';
+  violatorSel.innerHTML = '<option value="">— Выберите сотрудника —</option>';
 
   // Заполняем остальные поля текущими значениями
+  const taskAreaEl = document.getElementById('cons-edit-taskArea');
   const cellEl = document.getElementById('cons-edit-cell');
   const barcodeEl = document.getElementById('cons-edit-barcode');
   const nomEl = document.getElementById('cons-edit-nomenclatureCode');
   const productEl = document.getElementById('cons-edit-productName');
   const productBarcodeEl = document.getElementById('cons-edit-productBarcode');
   const handlingEl = document.getElementById('cons-edit-handlingUnitBarcode');
+  if (taskAreaEl) taskAreaEl.value = (complaint.taskArea === 'kdk' || complaint.taskArea === 'storage') ? complaint.taskArea : 'storage';
   if (cellEl) cellEl.value = complaint.cell || '';
   if (barcodeEl) barcodeEl.value = complaint.barcode || '';
   if (nomEl) nomEl.value = complaint.nomenclatureCode || '';
@@ -852,7 +1032,11 @@ function openEditModal(complaint) {
       companySel.appendChild(opt);
     });
     const selectedCompany = companySel.value;
-    if (selectedCompany) fillViolatorSelect(violatorSel, empl.employees, selectedCompany, complaint.violator);
+    if (selectedCompany) {
+      fillViolatorSelect(violatorSel, empl.employees, selectedCompany, complaint.violator);
+    } else {
+      violatorSel.innerHTML = '<option value="">— Выберите сотрудника —</option>';
+    }
   }).catch((err) => {
     console.error('empl', err);
     companySel.innerHTML = '<option value="">— Ошибка загрузки —</option>';
@@ -882,12 +1066,8 @@ function closeEditModal() {
 
 function bindEditModalHandlers() {
   const modal = document.getElementById('cons-edit-modal');
-  const step1 = document.getElementById('cons-edit-step1');
-  const step2 = document.getElementById('cons-edit-step2');
-  const step3 = document.getElementById('cons-edit-step3');
   const companySel = document.getElementById('cons-edit-company');
   const violatorSel = document.getElementById('cons-edit-violator');
-  const nextBtn = document.getElementById('cons-edit-next');
   const saveBtn = document.getElementById('cons-edit-save');
   const cancelBtn = document.getElementById('cons-edit-cancel');
   const closeBtn = modal && modal.querySelector('.cons-edit-close');
@@ -899,65 +1079,20 @@ function bindEditModalHandlers() {
     });
   }
 
-  function goNext() {
-    if (editModalStep === 1) {
-      const company = companySel && companySel.value;
-      if (!company) {
-        alert('Выберите компанию');
-        return;
-      }
-      fillViolatorSelect(violatorSel, editModalEmpl.employees, company, null);
-      step1.style.display = 'none';
-      step2.style.display = 'block';
-      step3.style.display = 'none';
-      editModalStep = 2;
-      nextBtn.style.display = 'inline-block';
-      saveBtn.style.display = 'none';
-      nextBtn.textContent = 'Далее';
-      if (backBtn) backBtn.style.display = 'inline-block';
-      violatorSel.focus();
-    } else if (editModalStep === 2) {
-      const violator = violatorSel && violatorSel.value;
-      if (!violator) {
-        alert('Выберите сотрудника (нарушителя)');
-        return;
-      }
-      step1.style.display = 'none';
-      step2.style.display = 'none';
-      step3.style.display = 'block';
-      editModalStep = 3;
-      nextBtn.style.display = 'none';
-      saveBtn.style.display = 'inline-block';
-      if (backBtn) backBtn.style.display = 'inline-block';
-    }
-  }
-
-  const backBtn = document.getElementById('cons-edit-back');
-  function goBack() {
-    if (editModalStep === 2) {
-      step1.style.display = 'block';
-      step2.style.display = 'none';
-      step3.style.display = 'none';
-      editModalStep = 1;
-      if (backBtn) backBtn.style.display = 'none';
-      companySel.focus();
-    } else if (editModalStep === 3) {
-      step1.style.display = 'none';
-      step2.style.display = 'block';
-      step3.style.display = 'none';
-      editModalStep = 2;
-      violatorSel.focus();
-    }
-  }
-
-  if (nextBtn) nextBtn.addEventListener('click', goNext);
-  if (backBtn) backBtn.addEventListener('click', goBack);
-
   if (saveBtn) {
     saveBtn.addEventListener('click', async () => {
       if (!editModalComplaintId) return;
       const company = companySel && companySel.value;
       const violator = violatorSel && violatorSel.value;
+      if (!company) {
+        alert('Выберите компанию');
+        return;
+      }
+      if (!violator) {
+        alert('Выберите сотрудника (нарушителя)');
+        return;
+      }
+      const taskAreaEl = document.getElementById('cons-edit-taskArea');
       const cellEl = document.getElementById('cons-edit-cell');
       const barcodeEl = document.getElementById('cons-edit-barcode');
       const nomEl = document.getElementById('cons-edit-nomenclatureCode');
@@ -967,6 +1102,7 @@ function bindEditModalHandlers() {
       const payload = {
         company: company || undefined,
         violator: violator || undefined,
+        taskArea: (taskAreaEl && (taskAreaEl.value === 'kdk' || taskAreaEl.value === 'storage')) ? taskAreaEl.value : undefined,
         cell: cellEl && cellEl.value ? cellEl.value.trim() : undefined,
         barcode: barcodeEl && barcodeEl.value ? barcodeEl.value.trim() : undefined,
         nomenclatureCode: nomEl && nomEl.value ? nomEl.value.trim() : undefined,

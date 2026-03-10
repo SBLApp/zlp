@@ -1089,6 +1089,11 @@ app.put('/api/consolidation/complaints/:id/lookup', (req, res) => {
     if (d.lookupDone !== undefined) item.lookupDone = d.lookupDone;
     if (d.lookupError !== undefined) item.lookupError = d.lookupError;
     if (d.company !== undefined) item.company = d.company;
+    if (d.taskArea !== undefined) item.taskArea = (d.taskArea === 'kdk' || d.taskArea === 'storage') ? d.taskArea : '';
+    else if (d.operationType != null && (item.taskArea == null || String(item.taskArea).trim() === '')) {
+      const op = String(d.operationType).toUpperCase();
+      item.taskArea = (op === 'PICK_BY_LINE' || op.indexOf('PALLET') >= 0) ? 'kdk' : 'storage';
+    }
     if (item.violator != null && (item.company == null || String(item.company).trim() === '')) {
       const emplMap = getEmplMapFioToCompany();
       item.company = getCompanyByFio(emplMap, item.violator) || '';

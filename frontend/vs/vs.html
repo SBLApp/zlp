@@ -427,6 +427,11 @@
         <button class="btn btn-primary" id="cons-refresh-btn">⟳ Обновить</button>
         <button class="btn btn-secondary" id="cons-lookup-all-btn">🔍 Проверить все</button>
         <button class="btn btn-secondary" id="cons-send-telegram-btn">📨 Отправить в Telegram</button>
+        <label class="cons-sz-supervisor-label" for="cons-sz-supervisor">Начальник смены:</label>
+        <select id="cons-sz-supervisor" class="cons-status-select" title="ФИО для подписи в СЗ (список из Настроек в Документах)">
+          <option value="">— Выберите —</option>
+        </select>
+        <button class="btn btn-secondary" id="cons-print-sz-btn">🖨 Создать СЗ</button>
         <div class="cons-bulk-actions">
           <select id="cons-bulk-status" class="cons-status-select">
             <option value="new">Новая</option>
@@ -489,7 +494,7 @@
     </div>
   </div>
 
-  <!-- Модалка редактирования жалобы: компания → сотрудник → остальные поля -->
+  <!-- Модалка редактирования жалобы -->
   <div id="cons-edit-modal" class="modal-overlay cons-edit-modal">
     <div class="cons-edit-modal-inner">
       <div class="cons-edit-header">
@@ -497,21 +502,28 @@
         <button type="button" class="cons-edit-close" title="Закрыть">&times;</button>
       </div>
       <div class="cons-edit-steps">
-        <div id="cons-edit-step1" class="cons-edit-step">
+        <div class="cons-edit-step">
           <label class="cons-edit-label">Компания</label>
           <select id="cons-edit-company" class="form-control cons-edit-select">
             <option value="">— Выберите компанию —</option>
           </select>
         </div>
-        <div id="cons-edit-step2" class="cons-edit-step" style="display:none;">
+        <div class="cons-edit-step">
           <label class="cons-edit-label">Сотрудник (нарушитель)</label>
           <select id="cons-edit-violator" class="form-control cons-edit-select">
-            <option value="">— Сначала выберите компанию —</option>
+            <option value="">— Выберите сотрудника —</option>
           </select>
         </div>
-        <div id="cons-edit-step3" class="cons-edit-step cons-edit-fields" style="display:none;">
-          <label class="cons-edit-label">Остальные поля</label>
+        <div class="cons-edit-step cons-edit-fields">
+          <label class="cons-edit-label">Поля</label>
           <div class="cons-edit-grid">
+            <div class="cons-edit-field">
+              <label>Где выполнял задачу</label>
+              <select id="cons-edit-taskArea" class="form-control">
+                <option value="storage">В хранении</option>
+                <option value="kdk">В КДК</option>
+              </select>
+            </div>
             <div class="cons-edit-field">
               <label>Место</label>
               <input type="text" id="cons-edit-cell" class="form-control" placeholder="KDH-4-44">
@@ -541,9 +553,7 @@
       </div>
       <div class="cons-edit-actions">
         <button type="button" class="btn btn-secondary" id="cons-edit-cancel">Отмена</button>
-        <button type="button" class="btn btn-secondary" id="cons-edit-back" style="display:none;">Назад</button>
-        <button type="button" class="btn btn-primary" id="cons-edit-next">Далее</button>
-        <button type="button" class="btn btn-primary" id="cons-edit-save" style="display:none;">Сохранить</button>
+        <button type="button" class="btn btn-primary" id="cons-edit-save">Сохранить</button>
       </div>
     </div>
   </div>

@@ -1828,6 +1828,13 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
   gap: 6px;
 }
 
+.cons-sz-supervisor-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-right: 2px;
+  white-space: nowrap;
+}
+
 .cons-status-select {
   padding: 4px 8px;
   border: 1px solid var(--border);
