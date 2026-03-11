@@ -1207,7 +1207,8 @@ function setupEventListeners() {
     const dateStr = (selectedDate || '').replace(/(\d{4})-(\d{2})-(\d{2})/, '$3.$2.$1');
     const shiftLabelText = shiftFilter === 'night' ? 'Ночь' : 'День';
     const container = document.createElement('div');
-    container.style.cssText = 'position:absolute;left:-9999px;top:0;width:800px;';
+    // Ширина под полную таблицу: Исполнитель(200) + часы(12*46) + Итог(56) [+ Компания(180) для полного списка] + отступы
+    container.style.cssText = 'position:absolute;left:-9999px;top:0;width:1200px;overflow:visible;';
     document.body.appendChild(container);
     if (btn) btn.disabled = true;
     try {
