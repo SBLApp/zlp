@@ -9,22 +9,35 @@ const path = require('path');
 
 const DATA_DIR = path.join(__dirname, 'data');
 
+/** Часовой пояс смен: Москва (UTC+3), без перехода на летнее время */
+const MOSCOW_UTC_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+/** Возвращает { dateStr, hour } в московском времени для timestamp (ISO/UTC). */
+function getMoscowDateHour(ts) {
+  const d = new Date(ts);
+  const moscow = new Date(d.getTime() + MOSCOW_UTC_OFFSET_MS);
+  const dateStr = moscow.toISOString().slice(0, 10);
+  const hour = moscow.getUTCHours();
+  return { dateStr, hour };
+}
+
+/** Ключ смены по (dateStr, hour) в московском времени: день 9–20, ночь 21–8. */
+function getShiftKeyFromMoscowDateHour(dateStr, hour) {
+  if (hour >= 9 && hour < 21) return `${dateStr}_day`;
+  if (hour >= 21) return `${dateStr}_night`;
+  const prev = new Date(dateStr + 'T12:00:00Z');
+  prev.setUTCDate(prev.getUTCDate() - 1);
+  return `${prev.toISOString().slice(0, 10)}_night`;
+}
+
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
 function getShiftKey(isoDate) {
   const d = new Date(isoDate);
-  const h = d.getHours();
-  if (h >= 9 && h < 21) {
-    const dateStr = d.toISOString().slice(0, 10);
-    return `${dateStr}_day`;
-  } else {
-    const base = new Date(d);
-    if (h < 9) base.setDate(base.getDate() - 1);
-    const dateStr = base.toISOString().slice(0, 10);
-    return `${dateStr}_night`;
-  }
+  const { dateStr, hour } = getMoscowDateHour(d.toISOString());
+  return getShiftKeyFromMoscowDateHour(dateStr, hour);
 }
 
 function getCurrentShiftKey() {
@@ -161,9 +174,7 @@ function mergeOperations(newItems) {
   for (const item of newItems) {
     const ts = item.operationCompletedAt;
     if (!ts) continue;
-    const d = new Date(ts);
-    const dateStr = d.toISOString().slice(0, 10);
-    const hour = d.getHours();
+    const { dateStr, hour } = getMoscowDateHour(ts);
     const key = `${dateStr}\t${hour}`;
     if (!byDateHour.has(key)) byDateHour.set(key, []);
     byDateHour.get(key).push(item);
@@ -176,7 +187,7 @@ function mergeOperations(newItems) {
   for (const [dateHourKey, items] of byDateHour) {
     const [dateStr, hourStr] = dateHourKey.split('\t');
     const hour = parseInt(hourStr, 10);
-    const shiftKey = getShiftKey(new Date(`${dateStr}T${String(hour).padStart(2, '0')}:00:00`));
+    const shiftKey = getShiftKeyFromMoscowDateHour(dateStr, hour);
     if (!byShift[shiftKey]) byShift[shiftKey] = { added: 0, skipped: 0, total: 0 };
 
     const existing = loadHourly(dateStr, hour);
@@ -204,12 +215,25 @@ function mergeOperations(newItems) {
 
 // ─── Чтение: почасовые файлы или fallback на смены ───────────────────────────
 
-/** Список (dateStr, hour) для загрузки. Всегда отдаём все часы за дату (0–23 + ночь пред. дня), фильтр смены — на клиенте по локальному времени (UTC 06:00 = 09:00 МСК и т.д.). */
+/** Список (dateStr, hour) для загрузки.
+ * Ночь для даты D = 21:00–09:00, начиная с D: часы 21,22,23 по D и 0..8 по D+1.
+ * День для даты D = 09:00–21:00 по D: часы 9..20.
+ */
 function getHoursToLoad(dateStr, fromHour, toHour, shift) {
-  const prev = new Date(dateStr);
-  prev.setDate(prev.getDate() - 1);
-  const prevStr = prev.toISOString().slice(0, 10);
   const pairs = [];
+
+  if (shift === 'night') {
+    const next = new Date(dateStr + 'T12:00:00Z');
+    next.setUTCDate(next.getUTCDate() + 1);
+    const nextStr = next.toISOString().slice(0, 10);
+    for (const h of [21, 22, 23]) pairs.push([dateStr, h]);
+    for (let h = 0; h <= 8; h++) pairs.push([nextStr, h]);
+    return pairs;
+  }
+  if (shift === 'day') {
+    for (let h = 9; h <= 20; h++) pairs.push([dateStr, h]);
+    return pairs;
+  }
 
   if (fromHour !== undefined || toHour !== undefined) {
     const from = fromHour == null ? 0 : Math.max(0, fromHour);
@@ -217,7 +241,10 @@ function getHoursToLoad(dateStr, fromHour, toHour, shift) {
     for (let h = from; h <= to; h++) pairs.push([dateStr, h]);
     return pairs;
   }
-  // Полный день: ночь предыдущего (21–23) + все часы текущей даты (0–23)
+  // Полный день (без фильтра смены): ночь предыдущего (21–23) + все часы текущей даты (0–23)
+  const prev = new Date(dateStr + 'T12:00:00Z');
+  prev.setUTCDate(prev.getUTCDate() - 1);
+  const prevStr = prev.toISOString().slice(0, 10);
   for (const h of [21, 22, 23]) pairs.push([prevStr, h]);
   for (let h = 0; h <= 23; h++) pairs.push([dateStr, h]);
   return pairs;
@@ -240,15 +267,231 @@ function getDateItemsFromHourly(dateStr, options = {}) {
   return items;
 }
 
+const DAY_HOURS_SUMMARY = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
+const NIGHT_HOURS_SUMMARY = [22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+function getMoscowTodayStr() {
+  const m = new Date(Date.now() + MOSCOW_UTC_OFFSET_MS);
+  return m.toISOString().slice(0, 10);
+}
+
+function getHoursDisplayForSummary(dateStr, shift) {
+  const order = shift === 'night' ? NIGHT_HOURS_SUMMARY : DAY_HOURS_SUMMARY;
+  const todayStr = getMoscowTodayStr();
+  if (dateStr !== todayStr) return order;
+  const m = new Date(Date.now() + MOSCOW_UTC_OFFSET_MS);
+  const currentHour = m.getUTCHours();
+  const currentCol = shift === 'day' ? currentHour + 1 : (currentHour + 1) % 24;
+  if (shift === 'day') {
+    const passed = order.filter(col => col <= currentHour);
+    return order.filter(col => col <= currentCol).length > passed.length ? [...passed, currentCol].sort((a, b) => a - b) : passed;
+  }
+  const passed = order.filter(col => col >= 22 || col <= currentHour);
+  return order.filter(col => passed.includes(col) || col === currentCol);
+}
+
+/** Ключ задачи: КДК — один вклад в ячейку одним товаром = одна задача; остальные — по id/времени. */
+function getTaskKeySummary(item) {
+  const type = (item.operationType || '').toUpperCase();
+  if (type === 'PICK_BY_LINE') {
+    const exec = item.executorId || item.executor || '';
+    const cell = item.cell || '';
+    const product = item.nomenclatureCode || item.productName || '';
+    return `kdk|${exec}|${cell}|${product}`;
+  }
+  return item.id ? `op|${item.id}` : `op|${(item.completedAt || item.startedAt || '')}|${item.executor || ''}|${item.cell || ''}`;
+}
+
+function normalizeFioSummary(s) {
+  return String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/** Время HH:MM по Москве для timestamp (ISO). */
+function formatTimeMoscow(ts) {
+  if (!ts) return '—';
+  const m = new Date(new Date(ts).getTime() + MOSCOW_UTC_OFFSET_MS);
+  const h = m.getUTCHours();
+  const min = m.getUTCMinutes();
+  return String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0');
+}
+
+const IDLE_THRESHOLD_MS = 15 * 60 * 1000;
+
+/** Простои по сотрудникам: паузы между операциями >= 15 мин. Возвращает { [имя]: "10:30–10:45, ..." }. */
+function calcIdlesByEmployeeSummary(items) {
+  const byExecutor = new Map();
+  for (const item of items) {
+    const name = item.executor || '';
+    if (!name) continue;
+    const ts = item.completedAt;
+    if (!ts) continue;
+    if (!byExecutor.has(name)) byExecutor.set(name, []);
+    byExecutor.get(name).push(new Date(ts).getTime());
+  }
+  const out = {};
+  for (const [name, times] of byExecutor) {
+    if (times.length < 2) continue;
+    times.sort((a, b) => a - b);
+    const idles = [];
+    for (let i = 1; i < times.length; i++) {
+      if (times[i] - times[i - 1] >= IDLE_THRESHOLD_MS) {
+        idles.push(formatTimeMoscow(times[i - 1]) + '–' + formatTimeMoscow(times[i]));
+      }
+    }
+    if (idles.length) out[name] = idles.join(', ');
+  }
+  return out;
+}
+
+/** Сводка по массиву операций. opts: { shift, getCompany, dateStr } для companySummary и hourlyByEmployee. */
+function buildSummaryFromItems(items, opts = {}) {
+  const { shift, getCompany, dateStr } = opts;
+  const taskKeys = new Set(items.map(i => getTaskKeySummary(i)));
+  const totalOps = taskKeys.size;
+  const totalQty = items.reduce((s, i) => s + (Number(i.quantity) || 0), 0);
+
+  const byExecutor = new Map();
+  for (const item of items) {
+    const key = item.executor || 'Неизвестно';
+    if (!byExecutor.has(key)) byExecutor.set(key, { name: key, taskKeys: new Set(), qty: 0, firstAt: null, lastAt: null });
+    const e = byExecutor.get(key);
+    e.taskKeys.add(getTaskKeySummary(item));
+    e.qty += Number(item.quantity) || 0;
+    const ts = item.completedAt || item.startedAt;
+    if (ts) {
+      if (!e.firstAt || ts < e.firstAt) e.firstAt = ts;
+      if (!e.lastAt || ts > e.lastAt) e.lastAt = ts;
+    }
+  }
+  const executors = [...byExecutor.values()].map(e => ({
+    name: e.name,
+    ops: e.taskKeys.size,
+    qty: e.qty,
+    firstAt: e.firstAt,
+    lastAt: e.lastAt,
+  })).sort((a, b) => b.ops - a.ops);
+
+  const byHour = new Map();
+  for (const item of items) {
+    const ts = item.completedAt;
+    if (!ts) continue;
+    const moscow = new Date(new Date(ts).getTime() + MOSCOW_UTC_OFFSET_MS);
+    const h = moscow.getUTCHours();
+    if (!byHour.has(h)) byHour.set(h, { hour: h, taskKeys: new Set(), kdkTaskKeys: new Set(), employees: new Set(), storageOps: 0, kdkOps: 0 });
+    const hh = byHour.get(h);
+    const type = (item.operationType || '').toUpperCase();
+    const isKdk = type === 'PICK_BY_LINE';
+    const tk = getTaskKeySummary(item);
+    hh.taskKeys.add(tk);
+    if (isKdk) hh.kdkTaskKeys.add(tk);
+    else if (type === 'PIECE_SELECTION_PICKING') hh.storageOps++;
+    hh.kdkOps = hh.kdkTaskKeys.size;
+    if (item.executorId || item.executor) hh.employees.add(item.executorId || item.executor);
+  }
+  const hourly = [...byHour.values()].map(x => ({
+    hour: x.hour,
+    ops: x.taskKeys.size,
+    employees: x.employees.size,
+    storageOps: x.storageOps,
+    kdkOps: x.kdkOps,
+  })).sort((a, b) => a.hour - b.hour);
+
+  let firstAt = null;
+  let lastAt = null;
+  for (const item of items) {
+    const ts = item.completedAt;
+    if (!ts) continue;
+    if (!firstAt || ts < firstAt) firstAt = ts;
+    if (!lastAt || ts > lastAt) lastAt = ts;
+  }
+
+  let companySummary = { rows: [], hoursDisplay: [] };
+  let hourlyByEmployee = { hours: [], rows: [] };
+
+  if (shift && dateStr) {
+    const order = shift === 'night' ? NIGHT_HOURS_SUMMARY : DAY_HOURS_SUMMARY;
+    const resolveCompany = (name) => (getCompany && name ? (getCompany(name) || '—') : '—');
+
+    const byEmployeeHour = new Map();
+    for (const item of items) {
+      const ts = item.completedAt;
+      if (!ts) continue;
+      const moscow = new Date(new Date(ts).getTime() + MOSCOW_UTC_OFFSET_MS);
+      const h = moscow.getUTCHours();
+      const col = (h + 1) % 24;
+      const name = item.executor || 'Неизвестно';
+      if (!byEmployeeHour.has(name)) byEmployeeHour.set(name, new Map());
+      const hourMap = byEmployeeHour.get(name);
+      if (!hourMap.has(col)) hourMap.set(col, { pieceSelectionCount: 0, kdkSet: new Set() });
+      const cell = hourMap.get(col);
+      const type = (item.operationType || '').toUpperCase();
+      if (type === 'PIECE_SELECTION_PICKING') {
+        cell.pieceSelectionCount++;
+      } else if (type === 'PICK_BY_LINE') {
+        const productId = item.nomenclatureCode || item.productName || 'no-product';
+        const targetCell = item.cell || 'no-target-cell';
+        cell.kdkSet.add(`${productId}||${targetCell}`);
+      }
+    }
+
+    const heRows = [];
+    for (const [name, hourMap] of byEmployeeHour) {
+      const byHourRow = {};
+      let total = 0;
+      for (const col of order) {
+        const cell = hourMap.get(col);
+        if (!cell) { byHourRow[col] = 0; continue; }
+        const sz = cell.pieceSelectionCount + (cell.kdkSet ? cell.kdkSet.size : 0);
+        byHourRow[col] = sz;
+        total += sz;
+      }
+      heRows.push({ name, company: resolveCompany(name), byHour: byHourRow, total });
+    }
+
+    hourlyByEmployee = { hours: order, rows: heRows };
+
+    const byCompany = new Map();
+    for (const r of heRows) {
+      const c = r.company || '—';
+      if (!byCompany.has(c)) byCompany.set(c, []);
+      byCompany.get(c).push(r);
+    }
+    for (const arr of byCompany.values()) {
+      arr.sort((a, b) => b.total - a.total);
+    }
+    const companyTotals = new Map();
+    for (const [c, arr] of byCompany) {
+      companyTotals.set(c, arr.reduce((s, r) => s + r.total, 0));
+    }
+    const companiesOrder = [...byCompany.keys()].sort((a, b) => (companyTotals.get(b) || 0) - (companyTotals.get(a) || 0));
+    const hoursDisplay = getHoursDisplayForSummary(dateStr, shift);
+    const passedHours = hoursDisplay.length;
+    const rows = companiesOrder.map(c => {
+      const companyRows = byCompany.get(c) || [];
+      const employeesCount = companyRows.length;
+      const totalTasks = companyRows.reduce((s, r) => s + r.total, 0);
+      const szch = passedHours > 0 && employeesCount > 0 ? Math.round(totalTasks / employeesCount / passedHours) : 0;
+      const byHour = {};
+      for (const col of hoursDisplay) {
+        byHour[col] = companyRows.reduce((s, r) => s + (r.byHour && r.byHour[col] ? r.byHour[col] : 0), 0);
+      }
+      return { companyName: c, employeesCount, szch, totalTasks, byHour };
+    });
+    companySummary = { rows, hoursDisplay };
+  }
+
+  const idlesByEmployee = calcIdlesByEmployeeSummary(items);
+
+  return { totalOps, totalQty, executors, hourly, firstAt, lastAt, companySummary, hourlyByEmployee, idlesByEmployee };
+}
+
 function getDateItems(dateStr, options = {}) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return [];
   if (hasAnyHourlyData(dateStr)) {
     return getDateItemsFromHourly(dateStr, options);
   }
-  const prevDate = new Date(dateStr);
-  prevDate.setDate(prevDate.getDate() - 1);
-  const prevDateStr = prevDate.toISOString().slice(0, 10);
-  const nightShift = loadShift(prevDateStr + '_night');
+  // Fallback: смены из shift_YYYY-MM-DD_day|night (ночь для D = смена, начинающаяся в D 21:00)
+  const nightShift = loadShift(dateStr + '_night');
   const dayShift = loadShift(dateStr + '_day');
   const byId = new Map();
   if (options.shift !== 'day') {
@@ -262,6 +505,73 @@ function getDateItems(dateStr, options = {}) {
   const ts = item => item.operationCompletedAt || item.operationStartedAt || '';
   items.sort((a, b) => ts(a).localeCompare(ts(b)));
   return items;
+}
+
+/** Файл с данными хранения (picking-selection) за дату и смену: data/YYYY-MM-DD/storage_day|night.json */
+function storageDataFilePath(dateStr, shift) {
+  const name = shift === 'night' ? 'storage_night.json' : 'storage_day.json';
+  return path.join(hourlyDir(dateStr), name);
+}
+
+/** Сохранить данные хранения за дату и смену. payload: { totalStorageCount, storageByHour, totalWeightGrams, weightByEmployee }. */
+function saveStorageForDate(dateStr, shift, payload) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr) || !payload) return;
+  ensureHourlyDir(dateStr);
+  const fp = storageDataFilePath(dateStr, shift || 'day');
+  const obj = {
+    dateStr,
+    shift: shift || 'day',
+    totalStorageCount: Number(payload.totalStorageCount) || 0,
+    storageByHour: payload.storageByHour && typeof payload.storageByHour === 'object' ? payload.storageByHour : {},
+    totalWeightGrams: Number(payload.totalWeightGrams) || 0,
+    weightByEmployee: payload.weightByEmployee && typeof payload.weightByEmployee === 'object' ? payload.weightByEmployee : {},
+    updatedAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(fp, JSON.stringify(obj), 'utf8');
+}
+
+/** Загрузить сохранённые данные хранения за дату и смену. */
+function getStorageForDate(dateStr, shift) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
+  const fp = storageDataFilePath(dateStr, shift || 'day');
+  if (!fs.existsSync(fp)) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(fp, 'utf8'));
+    return {
+      totalStorageCount: Number(raw.totalStorageCount) || 0,
+      storageByHour: raw.storageByHour && typeof raw.storageByHour === 'object' ? raw.storageByHour : {},
+      totalWeightGrams: Number(raw.totalWeightGrams) || 0,
+      weightByEmployee: raw.weightByEmployee && typeof raw.weightByEmployee === 'object' ? raw.weightByEmployee : {},
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Колонки в таблицах: col = (hour + 1) % 24. Обратно: hour = (col - 1 + 24) % 24. */
+function storageByHourToCols(storageByHour, cols) {
+  const byHour = {};
+  for (const col of cols) {
+    const hour = (col - 1 + 24) % 24;
+    byHour[col] = (storageByHour[hour] ?? 0) + (storageByHour[String(hour)] ?? 0);
+  }
+  return byHour;
+}
+
+/** Быстрая сводка за дату и смену (цифры без полного списка операций). Подмешивает сохранённое хранение в hourly, в сводку по компаниям и в сотрудники по часам. context: { getCompany(fio) } опционально для companySummary. */
+function getDateSummary(dateStr, options = {}, context = {}) {
+  const items = getDateItems(dateStr, options);
+  const summary = buildSummaryFromItems(items, {
+    shift: options.shift,
+    getCompany: context.getCompany,
+    dateStr,
+  });
+  const stored = getStorageForDate(dateStr, options.shift);
+  if (stored) {
+    summary.storageTotalWeightGrams = stored.totalWeightGrams || 0;
+    summary.storageWeightByEmployee = stored.weightByEmployee && typeof stored.weightByEmployee === 'object' ? stored.weightByEmployee : {};
+  }
+  return summary;
 }
 
 // ─── Старые смены (для совместимости) ────────────────────────────────────────
@@ -325,16 +635,16 @@ function listShifts() {
         const raw = JSON.parse(fs.readFileSync(fp, 'utf8'));
         const n = Array.isArray(raw.items) ? raw.items.length : Object.keys(raw.items || {}).length;
         if (hour >= 9 && hour < 21) dayCount += n;
-        else if (hour >= 0 && hour < 9) nightCount += n;
+        else if (hour >= 21) nightCount += n; // ночь для D: 21–23 по D (0–8 по D+1 добавляем ниже)
       } catch {}
     }
-    const prev = new Date(dateStr);
-    prev.setDate(prev.getDate() - 1);
-    const prevStr = prev.toISOString().slice(0, 10);
-    if (fs.existsSync(hourlyDir(prevStr))) {
-      for (const h of [21, 22, 23]) {
-        const m = loadHourly(prevStr, h);
-        nightCount += m.size;
+    const next = new Date(dateStr + 'T12:00:00Z');
+    next.setUTCDate(next.getUTCDate() + 1);
+    const nextStr = next.toISOString().slice(0, 10);
+    if (fs.existsSync(hourlyDir(nextStr))) {
+      for (const h of [0, 1, 2, 3, 4, 5, 6, 7, 8]) {
+        const m = loadHourly(nextStr, h);
+        nightCount += m.size; // ночь для dateStr: 0–8 по dateStr+1
       }
     }
     if (dayCount > 0) result.push({ shiftKey: `${dateStr}_day`, date: dateStr, type: 'day', count: dayCount, updatedAt: lastUpdated ? new Date(lastUpdated).toISOString() : null, fileSize: null });
@@ -362,9 +672,12 @@ module.exports = {
   mergeOperations,
   getShiftItems,
   getDateItems,
+  getDateSummary,
   listShifts,
   getCurrentShiftKey,
   getShiftKey,
+  saveStorageForDate,
+  getStorageForDate,
   DATA_DIR,
   ensureDataDir,
   toLightItem,

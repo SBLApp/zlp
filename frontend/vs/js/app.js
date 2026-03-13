@@ -7,8 +7,11 @@ import * as auth from './auth.js';
 import * as tableModule from './table.js';
 import {
   calcStats, renderStats, renderExecutorTable, renderHourlyChart, renderHourlyByEmployee,
-  getHourlyByEmployeeGroupedByCompany, buildHourlyTableHtmlForCompany, buildHourlyTableHtmlFullList,
+  renderHourlyByEmployeeFromSummary,
+  getHourlyByEmployeeGroupedByCompany, getHourlyByEmployeeGroupedByCompanyFromSummary, buildHourlyTableHtmlForCompany, buildHourlyTableHtmlFullList,
   getCompanySummaryTableData, renderCompanySummaryTable,
+  buildStorageRowForCols,
+  calcIdlesByEmployee,
 } from './stats.js';
 import {
   initMonitor, updateMonitorEmpl, loadRollcall, getRollcallCount,
@@ -22,12 +25,18 @@ import { initConsolidation, loadComplaints } from './consolidation.js';
 
 /** Выбранная дата (YYYY-MM-DD); по умолчанию сегодня */
 let selectedDate = new Date().toISOString().slice(0, 10);
-/** День (9–21) или Ночь (22–9) — фильтр отображаемых операций */
+/** День (9–21) или Ночь (21–09) — фильтр отображаемых операций */
 let shiftFilter = 'day';
 let allItems = [];
+/** Сводка за дату/смену (цифры без полного списка). Отдаётся быстро. */
+let dateSummary = null;
+/** Полные данные загружены для текущей даты/смены (вкладка Данные). */
+let dataTabFullyLoaded = false;
 let emplMap = new Map();
 let emplCompanies = [];
 let filterCompany = '__all__';
+/** Хранение из API picking-selection/tasks (по часам и итог) для подмешивания в статистику */
+let storageSupplement = { storageByHour: {}, totalStorageCount: 0 };
 let autoRefreshTimer = null;
 let telegramBindPollId = null;
 
@@ -159,8 +168,8 @@ function showDashboard() {
   applyModulesVisibility();
   const filterSection = el('company-filter-section');
   if (filterSection) filterSection.style.display = auth.getRole() === 'manager' ? 'none' : '';
-  // Один раз загружаем данные для выбранной даты (избегаем двойного подсчёта в init)
-  loadDateData(selectedDate);
+  // Быстрая загрузка сводки (цифры). Полный список — по кнопке «Загрузить данные» во вкладке Данные.
+  loadDateSummary(selectedDate);
 }
 
 function onAuthChange(loggedIn) {
@@ -212,17 +221,17 @@ function syncShiftToggle() {
       fromInp.value = 9;
       toInp.value = 21;
     } else {
-      fromInp.value = 22;
+      fromInp.value = 21;
       toInp.value = 9;
     }
   }
 }
 
-/** Определяет смену по времени операции: день 9:00–21:59, ночь 22:00–9:59 */
+/** Определяет смену по времени операции: день 9:00–20:59, ночь 21:00–08:59 (21–09) */
 function getItemShift(iso) {
   if (!iso) return 'day';
   const h = new Date(iso).getHours();
-  return (h >= 9 && h <= 21) ? 'day' : 'night';
+  return (h >= 9 && h < 21) ? 'day' : 'night';
 }
 
 /** Операции за выбранную смену (до фильтра по подрядчику) */
@@ -237,9 +246,9 @@ function getItemsByShift() {
 function getCoveredHoursForDate(dateStr, shift) {
   const covered = new Set();
   if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return covered;
-  const prevDate = new Date(dateStr);
-  prevDate.setDate(prevDate.getDate() - 1);
-  const prevDateStr = prevDate.toISOString().slice(0, 10);
+  const nextDate = new Date(dateStr + 'T12:00:00Z');
+  nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+  const nextDateStr = nextDate.toISOString().slice(0, 10);
 
   for (const item of allItems) {
     const ts = item.completedAt;
@@ -251,8 +260,9 @@ function getCoveredHoursForDate(dateStr, shift) {
     if (shift === 'day') {
       if (itemDateStr === dateStr && h >= 9 && h < 21) covered.add(h);
     } else {
-      if (itemDateStr === prevDateStr && h >= 21) covered.add(h);
-      else if (itemDateStr === dateStr && h < 9) covered.add(h);
+      // Ночь для даты D = 21:00 D – 09:00 (D+1): часы 21,22,23 по D и 0..8 по D+1
+      if (itemDateStr === dateStr && h >= 21) covered.add(h);
+      else if (itemDateStr === nextDateStr && h < 9) covered.add(h);
     }
   }
   return covered;
@@ -261,9 +271,9 @@ function getCoveredHoursForDate(dateStr, shift) {
 /** Возвращает время последней операции (completedAt) в allItems для указанной даты и часа в рамках смены, или null. */
 function getLastCompletedAtForHour(dateStr, hour, shift) {
   if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
-  const prevDate = new Date(dateStr);
-  prevDate.setDate(prevDate.getDate() - 1);
-  const prevDateStr = prevDate.toISOString().slice(0, 10);
+  const nextDate = new Date(dateStr + 'T12:00:00Z');
+  nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+  const nextDateStr = nextDate.toISOString().slice(0, 10);
   let maxTs = null;
   for (const item of allItems) {
     const ts = item.completedAt;
@@ -275,7 +285,8 @@ function getLastCompletedAtForHour(dateStr, hour, shift) {
     if (shift === 'day') {
       match = itemDateStr === dateStr && h >= 9 && h < 21 && h === hour;
     } else {
-      match = (itemDateStr === prevDateStr && h >= 21 && h === hour) || (itemDateStr === dateStr && h < 9 && h === hour);
+      // Ночь для даты D: часы 21,22,23 по D и 0..8 по D+1
+      match = (itemDateStr === dateStr && h >= 21 && h === hour) || (itemDateStr === nextDateStr && h < 9 && h === hour);
     }
     if (match) {
       const t = d.getTime();
@@ -285,6 +296,27 @@ function getLastCompletedAtForHour(dateStr, hour, shift) {
   return maxTs;
 }
 
+/** Быстрая загрузка только сводки (цифры). Не грузит полный список операций. Хранение — из операций PIECE_SELECTION_PICKING и из сохранённых данных (вес/задачи по picking-selection API при «Обновить данные»). */
+async function loadDateSummary(dateStr) {
+  if (!dateStr) return;
+  setLoading(true);
+  try {
+    const opts = { shift: shiftFilter };
+    const res = await api.getDateSummary(dateStr, opts);
+    dateSummary = res;
+    allItems = [];
+    dataTabFullyLoaded = false;
+    syncDatePickers();
+    renderAll();
+  } catch (err) {
+    showNotification('Ошибка загрузки сводки: ' + err.message, 'error');
+    dateSummary = null;
+  } finally {
+    setLoading(false);
+  }
+}
+
+/** Полная загрузка операций (для вкладки Данные). Хранение — из операций PIECE_SELECTION_PICKING; вес в хранении (колонка Тх) — из сохранённых данных после «Обновить данные». */
 async function loadDateData(dateStr) {
   if (!dateStr) return;
   setLoading(true);
@@ -293,6 +325,9 @@ async function loadDateData(dateStr) {
     const res = await api.getDateItems(dateStr, opts);
     const raw = res.items || [];
     allItems = raw.map(i => (i.executor !== undefined && i.completedAt !== undefined ? i : flattenItem(i)));
+    dateSummary = null;
+    dataTabFullyLoaded = true;
+    storageSupplement = { storageByHour: {}, totalStorageCount: 0, totalWeightGrams: 0, weightByEmployee: {} };
     syncDatePickers();
     renderAll();
   } catch (err) {
@@ -302,9 +337,22 @@ async function loadDateData(dateStr) {
   }
 }
 
-/** Обновить данные на экране: если выбрана сегодняшняя дата — подтянуть с сервера. */
+/** Запросить вес в хранении (picking-selection) и сохранить на сервер. Вызывается только при «Обновить данные». */
+async function fetchAndSavePickingSelectionWeight(dateStr) {
+  const token = auth.getToken();
+  if (!token || !dateStr) return;
+  try {
+    const range = getDateRangeForPickingSelection(dateStr);
+    const { totalStorageCount, storageByHour, totalWeightGrams, weightByEmployee } = await api.getPickingSelectionTasks(token, range, shiftFilter);
+    await api.putDateStorage(dateStr, shiftFilter, { totalStorageCount, storageByHour, totalWeightGrams, weightByEmployee });
+  } catch (e) {
+    console.warn('Вес в хранении (picking-selection):', e.message);
+  }
+}
+
+/** Обновить данные на экране: если выбрана сегодняшняя дата — подтянуть сводку с сервера. */
 async function refreshCurrentShift() {
-  if (selectedDate === getTodayStr()) await loadDateData(selectedDate);
+  if (selectedDate === getTodayStr()) await loadDateSummary(selectedDate);
 }
 
 async function loadStatus() {
@@ -394,28 +442,203 @@ function dateLabel(ymd) {
   return d && m && y ? `${d}.${m}.${y}` : ymd;
 }
 
-/** Подпись для карточки «Дата»: при ночи показываем диапазон 21 (пред. день) – 09 */
+/** Краткая дата для подписи: 12.03.26 */
+function shortDateLabel(ymd) {
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd || '—';
+  const [y, m, d] = ymd.split('-');
+  return `${d}.${m}.${y.slice(-2)}`;
+}
+
+/** Диапазон для picking-selection: дата отгрузки всегда +1 к выбранной. Для выбранной 12.03 запрашиваем logisticDate 13.03 = 12.03 21:00–13.03 20:59 UTC. */
+function getDateRangeForPickingSelection(dateStr) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return { dateFrom: null, dateTo: null };
+  const next = new Date(dateStr + 'T12:00:00Z');
+  next.setUTCDate(next.getUTCDate() + 1);
+  const nextStr = next.toISOString().slice(0, 10);
+  return { dateFrom: `${dateStr}T21:00:00.000Z`, dateTo: `${nextStr}T20:59:59.999Z` };
+}
+
+/** Диапазон для операций по смене (логистические сутки). День 12.03 = 11.03 21:00–12.03 20:59; ночь 12.03 = 12.03 21:00–13.03 20:59. */
+function getDateRangeForShift(dateStr, shift) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return { dateFrom: null, dateTo: null };
+  const prev = new Date(dateStr + 'T12:00:00Z');
+  prev.setUTCDate(prev.getUTCDate() - 1);
+  const prevStr = prev.toISOString().slice(0, 10);
+  const next = new Date(dateStr + 'T12:00:00Z');
+  next.setUTCDate(next.getUTCDate() + 1);
+  const nextStr = next.toISOString().slice(0, 10);
+  if (shift === 'day') {
+    return { dateFrom: `${prevStr}T21:00:00.000Z`, dateTo: `${dateStr}T20:59:59.999Z` };
+  }
+  return { dateFrom: `${dateStr}T21:00:00.000Z`, dateTo: `${nextStr}T20:59:59.999Z` };
+}
+
+/** Подпись для карточки «Дата»: день — одна дата; ночь — диапазон выбранная дата > следующий день */
 function dateCardLabel() {
-  const d = dateLabel(selectedDate);
-  if (!d || d === '—') return d;
-  if (shiftFilter === 'day') return `${d} · День 9–21`;
-  const prev = new Date(selectedDate + 'T12:00:00Z');
-  prev.setDate(prev.getDate() - 1);
-  const prevStr = dateLabel(prev.toISOString().slice(0, 10));
-  return `${d} · Ночь 22 (${prevStr}) – 09 (${d})`;
+  if (!selectedDate) return '—';
+  if (shiftFilter === 'day') {
+    return `${dateLabel(selectedDate)} · День 9–21`;
+  }
+  const next = new Date(selectedDate + 'T12:00:00Z');
+  next.setUTCDate(next.getUTCDate() + 1);
+  const nextStr = next.toISOString().slice(0, 10);
+  return `Ночь ${shortDateLabel(selectedDate)} > ${shortDateLabel(nextStr)}`;
 }
 
 function renderAll() {
-  const itemsByShift = getItemsByShift();
-  const tableItems = filterItemsByCompany(itemsByShift);
-  const stats = calcStats(itemsByShift, emplMap, filterCompany);
-  renderStats(stats, dateCardLabel());
-  renderExecutorTable(stats.executors);
-  const summaryData = getCompanySummaryTableData(itemsByShift, shiftFilter, emplMap, selectedDate);
-  renderCompanySummaryTable(summaryData.rows, summaryData.hoursDisplay);
-  renderHourlyChart(stats.hourly, shiftFilter);
-  renderHourlyByEmployee(tableItems, shiftFilter, emplMap);
-  tableModule.setTableData(tableItems, emplMap);
+  if (allItems.length > 0) {
+    const itemsByShift = getItemsByShift();
+    const tableItems = filterItemsByCompany(itemsByShift);
+    const stats = calcStats(itemsByShift, emplMap, filterCompany);
+    (stats.hourly || []).forEach(h => {
+      h.ops = (h.storageOps || 0) + (h.kdkOps || 0);
+    });
+    renderStats(stats, dateCardLabel());
+    renderExecutorTable(stats.executors);
+    const summaryData = getCompanySummaryTableData(itemsByShift, shiftFilter, emplMap, selectedDate);
+    renderCompanySummaryTable(summaryData.rows, summaryData.hoursDisplay, el('company-summary-show-hours')?.checked !== false);
+    renderHourlyChart(stats.hourly, shiftFilter);
+    const showIdles = el('hourly-show-idles')?.checked === true;
+    const idlesByEmployee = showIdles ? calcIdlesByEmployee(tableItems, 15 * 60 * 1000) : {};
+    renderHourlyByEmployee(tableItems, shiftFilter, emplMap, storageSupplement, showIdles, idlesByEmployee);
+    tableModule.setTableData(tableItems, emplMap);
+    return;
+  }
+  if (dateSummary) {
+    const getCompanyForName = (name) => (emplMap && name ? (getCompanyByFio(emplMap, normFio(name)) || '—') : '—');
+    const matchNameToFilter = (name) => {
+      if (!filterCompany || filterCompany === '__all__') return true;
+      if (filterCompany === '__none__') return !hasMatchInEmplKeys(normFio(name), emplMap);
+      return getCompanyForName(name) === filterCompany;
+    };
+
+    // Фильтруем summary-данные по компании, чтобы чипы работали даже без полной загрузки allItems
+    const executorsWithCompanyAll = (dateSummary.executors || []).map(e => ({
+      ...e,
+      company: getCompanyForName(e.name),
+    }));
+    const executorsWithCompany = executorsWithCompanyAll.filter(e => matchNameToFilter(e.name));
+
+    const hourlyByEmployeeHours = dateSummary.hourlyByEmployee?.hours || [];
+    const hourlyByEmployeeRowsAll = (dateSummary.hourlyByEmployee?.rows || []).map(r => ({
+      ...r,
+      company: r.company || getCompanyForName(r.name),
+    }));
+    const hourlyByEmployeeRows = hourlyByEmployeeRowsAll.filter(r => matchNameToFilter(r.name));
+
+    // Карточки и топ сотрудников: считаем отфильтрованные суммы
+    const totalOpsFiltered = executorsWithCompany.reduce((s, e) => s + (e.ops || 0), 0);
+    const totalQtyFiltered = executorsWithCompany.reduce((s, e) => s + (e.qty || 0), 0);
+
+    // График по часам: если есть hourlyByEmployee — соберём ops/чел по часам из него (иначе оставим общий hourly)
+    let hourlyForChart = dateSummary.hourly || [];
+    if (dateSummary.hourlyByEmployee && filterCompany && filterCompany !== '__all__') {
+      const sumByHour = new Map(); // dataHour -> { ops, employeesSet }
+      for (const r of hourlyByEmployeeRows) {
+        const byHour = r.byHour || {};
+        for (const [colStr, vRaw] of Object.entries(byHour)) {
+          const col = Number(colStr);
+          if (!Number.isFinite(col)) continue;
+          const v = Number(vRaw) || 0;
+          const dataHour = shiftFilter === 'day' ? (col - 1) : ((col - 1 + 24) % 24);
+          if (!sumByHour.has(dataHour)) sumByHour.set(dataHour, { ops: 0, employees: new Set() });
+          const cell = sumByHour.get(dataHour);
+          cell.ops += v;
+          if (v > 0) cell.employees.add(r.name);
+        }
+      }
+      hourlyForChart = [...sumByHour.entries()].map(([hour, cell]) => ({
+        hour,
+        ops: cell.ops,
+        employees: cell.employees.size,
+        storageOps: 0,
+        kdkOps: 0,
+      }));
+    }
+
+    renderStats(
+      { totalOps: filterCompany === '__all__' ? (dateSummary.totalOps || 0) : totalOpsFiltered,
+        totalQty: filterCompany === '__all__' ? (dateSummary.totalQty || 0) : totalQtyFiltered,
+        executors: executorsWithCompany,
+        hourly: hourlyForChart,
+      },
+      dateCardLabel()
+    );
+    renderExecutorTable(executorsWithCompany);
+    renderHourlyChart(hourlyForChart, shiftFilter);
+
+    if (dateSummary.companySummary) {
+      const csRowsAll = dateSummary.companySummary.rows || [];
+      const csRows = (filterCompany && filterCompany !== '__all__' && filterCompany !== '__none__')
+        ? csRowsAll.filter(r => r.companyName === filterCompany)
+        : (filterCompany === '__none__' ? [] : csRowsAll);
+      renderCompanySummaryTable(csRows, dateSummary.companySummary.hoursDisplay || [], el('company-summary-show-hours')?.checked !== false);
+    } else {
+      renderCompanySummaryPlaceholder();
+    }
+
+    if (dateSummary.hourlyByEmployee) {
+      const showIdlesHourly = el('hourly-show-idles')?.checked === true;
+      renderHourlyByEmployeeFromSummary(
+        hourlyByEmployeeHours,
+        hourlyByEmployeeRows,
+        dateSummary.storageWeightByEmployee || {},
+        dateSummary.storageTotalWeightGrams || 0,
+        showIdlesHourly,
+        dateSummary.idlesByEmployee && typeof dateSummary.idlesByEmployee === 'object' ? dateSummary.idlesByEmployee : {},
+        shiftFilter
+      );
+    } else {
+      renderHourlyByEmployeePlaceholder();
+    }
+    renderTableLoadDataPlaceholder();
+    return;
+  }
+  renderStats({ totalOps: 0, totalQty: 0, executors: [], hourly: [] }, dateCardLabel());
+  renderExecutorTable([]);
+  renderCompanySummaryPlaceholder();
+  renderHourlyChart([], shiftFilter);
+  renderHourlyByEmployeePlaceholder();
+  renderTableLoadDataPlaceholder();
+}
+
+function renderCompanySummaryPlaceholder() {
+  const container = el('company-summary-table-wrap');
+  if (!container) return;
+  container.innerHTML = '<div class="empty-row" style="padding:16px;text-align:center;color:var(--text-muted)">Загрузите полные данные во вкладке «Данные» (кнопка «Загрузить данные») для таблицы по компаниям.</div>';
+}
+
+function renderHourlyByEmployeePlaceholder() {
+  const container = el('hourly-employee-table-wrap');
+  if (!container) return;
+  container.innerHTML = '<div class="empty-row" style="padding:20px;text-align:center;color:var(--text-muted)">Загрузите полные данные во вкладке «Данные» для таблицы по сотрудникам и часам.</div>';
+}
+
+function renderTableLoadDataPlaceholder() {
+  const counterEl = el('table-counter');
+  if (counterEl) counterEl.textContent = '—';
+  const tbody = el('ops-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = `
+    <tr>
+      <td colspan="7" class="empty-row" style="padding:32px;text-align:center;vertical-align:middle;">
+        <p style="margin:0 0 12px;color:var(--text-muted)">Полный список операций не загружен.</p>
+        <p style="margin:0 0 16px;font-size:0.9em;color:var(--text-muted)">Загрузка может занять 1–2 минуты.</p>
+        <button type="button" class="btn btn-primary" id="btn-load-full-data">Загрузить данные</button>
+      </td>
+    </tr>`;
+  el('btn-load-full-data')?.addEventListener('click', async () => {
+    const btn = el('btn-load-full-data');
+    if (btn) { btn.disabled = true; btn.textContent = 'Загрузка…'; }
+    showNotification('Загрузка полного списка операций (1–2 мин)…', 'info');
+    try {
+      await loadDateData(selectedDate);
+      showNotification('Данные загружены', 'success');
+    } catch (e) {
+      showNotification('Ошибка: ' + e.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Загрузить данные'; }
+    }
+  });
 }
 
 function getFilteredItems() {
@@ -524,6 +747,8 @@ function getTelegramChatsFromConfig(config) {
       threadIdConsolidation: String(c.threadIdConsolidation ?? c.threadId ?? '').trim(),
       threadIdStats: String(c.threadIdStats ?? c.threadId ?? '').trim(),
       label: String(c.label != null ? c.label : '').trim(),
+      enabled: c.enabled !== false,
+      companiesFilter: Array.isArray(c.companiesFilter) ? c.companiesFilter : (c.companiesFilter ? String(c.companiesFilter).split(',').map(s => s.trim()).filter(Boolean) : []),
     }));
   }
   if (config.telegramChatId && String(config.telegramChatId).trim()) {
@@ -532,6 +757,8 @@ function getTelegramChatsFromConfig(config) {
       threadIdConsolidation: String(config.telegramThreadId || '').trim(),
       threadIdStats: String(config.telegramThreadId || '').trim(),
       label: '',
+      enabled: true,
+      companiesFilter: [],
     }];
   }
   return [];
@@ -539,11 +766,23 @@ function getTelegramChatsFromConfig(config) {
 
 function renderTelegramChatsList(container, chats) {
   if (!container) return;
+  const companyOptions = (selectedList) => {
+    const set = new Set(Array.isArray(selectedList) ? selectedList : []);
+    return emplCompanies.length
+      ? emplCompanies.map(co => `<option value="${escAttr(co)}" ${set.has(co) ? 'selected' : ''}>${escAttr(co)}</option>`).join('')
+      : '<option value="" disabled>Загрузите сотрудников — появятся компании</option>';
+  };
   container.innerHTML = chats.map((c, i) => `
     <div class="telegram-chat-row" data-index="${i}">
-      <input type="text" class="form-control tg-chat-id" placeholder="Chat ID (-100... или id пользователя)" value="${escAttr(c.chatId)}" title="Chat ID">
-      <input type="text" class="form-control tg-thread-cons" placeholder="Thread консолидации" value="${escAttr(c.threadIdConsolidation)}" title="ID темы для ошибок комплектации">
-      <input type="text" class="form-control tg-thread-stats" placeholder="Thread статистики" value="${escAttr(c.threadIdStats)}" title="ID темы для статистики">
+      <label class="tg-enabled-wrap" title="Отключает уведомления в этот чат">
+        <input type="checkbox" class="tg-enabled" ${c.enabled !== false ? 'checked' : ''}> Вкл
+      </label>
+      <input type="text" class="form-control tg-chat-id" placeholder="Chat ID" value="${escAttr(c.chatId)}" title="Chat ID">
+      <input type="text" class="form-control tg-thread-cons" placeholder="Thread консолидации" value="${escAttr(c.threadIdConsolidation)}">
+      <input type="text" class="form-control tg-thread-stats" placeholder="Thread статистики" value="${escAttr(c.threadIdStats)}">
+      <select multiple class="form-control tg-companies" title="Пусто = все компании; выберите нужные для этого чата">
+        ${companyOptions(c.companiesFilter)}
+      </select>
       <button type="button" class="btn btn-icon btn-icon-del btn-telegram-del" title="Удалить чат">✕</button>
     </div>
   `).join('');
@@ -563,7 +802,7 @@ async function loadTelegramInfo() {
     const chats = getTelegramChatsFromConfig(config);
     const hasChats = chats.some(c => c.chatId);
 
-    renderTelegramChatsList(listEl, chats.length ? chats : [{ chatId: '', threadId: '', label: '' }]);
+    renderTelegramChatsList(listEl, chats.length ? chats : [{ chatId: '', threadIdConsolidation: '', threadIdStats: '', label: '', enabled: true, companiesFilter: [] }]);
 
     if (statusEl) {
       if (hasToken && hasChats) {
@@ -1051,23 +1290,29 @@ function setupEventListeners() {
     if (e.target.id === 'vs-user-edit-modal') closeVsUserEditModal();
   });
 
-  // Выбор даты — оба календаря (статистика и данные)
+  // Выбор даты — оба календаря (статистика и данные). Загружаем только сводку.
   for (const id of ['date-picker-stats', 'date-picker-data']) {
     el(id)?.addEventListener('change', async e => {
       selectedDate = e.target.value;
       syncDatePickers();
-      await loadDateData(selectedDate);
+      await loadDateSummary(selectedDate);
     });
   }
 
-  // Тумблер День / Ночь — синхронизация обоих тулбаров
+  // Тумблер День / Ночь — синхронизация обоих тулбаров. Загружаем только сводку.
   document.querySelectorAll('.shift-toggle-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       shiftFilter = btn.dataset.shift;
       syncShiftToggle();
-      loadDateData(selectedDate);
+      loadDateSummary(selectedDate);
     });
   });
+
+  // Сводка по компаниям: тумблер «по часам» — перерисовка таблицы без перезагрузки данных.
+  el('company-summary-show-hours')?.addEventListener('change', () => renderAll());
+
+  // Сотрудники по часам: тумблер «Простои >15 мин» — показать колонку с паузами между задачами.
+  el('hourly-show-idles')?.addEventListener('change', () => renderAll());
 
   async function runFetchForHours(forceRecheck) {
     const fromHour = Math.max(0, Math.min(23, parseInt(el('fetch-hour-from')?.value, 10) || 9));
@@ -1096,7 +1341,8 @@ function setupEventListeners() {
     if (missingHours.length === 0) {
       if (!forceRecheck) {
         showNotification('Данные за выбранный диапазон уже загружены', 'success');
-        await loadDateData(selectedDate);
+        await fetchAndSavePickingSelectionWeight(selectedDate);
+        await loadDateSummary(selectedDate);
         await loadStatus();
       }
       return;
@@ -1107,24 +1353,17 @@ function setupEventListeners() {
     const maxH = Math.max(...missingHours);
     let fromDate;
     let toDate;
-    if (shiftFilter === 'night' && (minH >= 22 || maxH < 9)) {
-      const prev = new Date(y, m - 1, d);
-      prev.setDate(prev.getDate() - 1);
-      if (minH >= 22) {
-        fromDate = new Date(prev.getFullYear(), prev.getMonth(), prev.getDate(), minH, 0, 0, 0);
-      } else {
-        fromDate = new Date(y, m - 1, d, minH, 0, 0, 0);
-      }
-      if (maxH >= 22) {
-        toDate = new Date(prev.getFullYear(), prev.getMonth(), prev.getDate(), maxH, 59, 59, 999);
-      } else {
-        toDate = new Date(y, m - 1, d, maxH, 59, 59, 999);
-      }
+    if (shiftFilter === 'night') {
+      // Ночь для выбранной даты D: всегда 21:00 D — 08:59 (D+1), чтобы не захватывать 00:00–20:59 дня D
+      const next = new Date(y, m - 1, d);
+      next.setDate(next.getDate() + 1);
+      fromDate = new Date(y, m - 1, d, 21, 0, 0, 0);
+      toDate = new Date(next.getFullYear(), next.getMonth(), next.getDate(), 8, 59, 59, 999);
     } else {
       fromDate = new Date(y, m - 1, d, minH, 0, 0, 0);
       toDate = new Date(y, m - 1, d, maxH, 59, 59, 999);
     }
-    if (!forceRecheck && selectedDate === todayStr && minH === currentHour) {
+    if (!forceRecheck && selectedDate === todayStr && shiftFilter !== 'night' && minH === currentHour) {
       const lastTs = getLastCompletedAtForHour(selectedDate, currentHour, shiftFilter);
       if (lastTs != null) {
         fromDate = new Date(lastTs);
@@ -1153,7 +1392,8 @@ function setupEventListeners() {
     }
     if (res.success === false) throw new Error(res.error);
     showNotification(`Получено ${res.fetched}, добавлено ${res.added}`, 'success');
-    await loadDateData(selectedDate);
+    await fetchAndSavePickingSelectionWeight(selectedDate);
+    await loadDateSummary(selectedDate);
     await loadStatus();
   }
 
@@ -1233,6 +1473,7 @@ function setupEventListeners() {
                 blob,
                 caption: `Весь список по часам • ${dateStr} • ${shiftLabelText}`,
                 filename: `full_list_${dateStr.replace(/\./g, '-')}.png`,
+                companyKey: 'Full',
               });
             }
           }
@@ -1260,6 +1501,7 @@ function setupEventListeners() {
           blob,
           caption: `Сотрудники по часам • ${companyName} • ${dateStr} • ${shiftLabelText}`,
           filename: `${safeName}_${dateStr.replace(/\./g, '-')}.png`,
+          companyKey: companyName,
         });
       }
       document.body.removeChild(container);
@@ -1281,8 +1523,18 @@ function setupEventListeners() {
       showNotification('Библиотека html2canvas не загружена', 'error');
       return;
     }
-    const tableItems = getFilteredItems();
-    const { hours, byCompany, allRows, companiesOrder } = getHourlyByEmployeeGroupedByCompany(tableItems, shiftFilter, emplMap, selectedDate);
+    let hours, byCompany, allRows, companiesOrder;
+    if (allItems.length > 0) {
+      const tableItems = getFilteredItems();
+      ({ hours, byCompany, allRows, companiesOrder } = getHourlyByEmployeeGroupedByCompany(tableItems, shiftFilter, emplMap, selectedDate));
+    } else if (dateSummary?.hourlyByEmployee) {
+      ({ hours, byCompany, allRows, companiesOrder } = getHourlyByEmployeeGroupedByCompanyFromSummary(dateSummary.hourlyByEmployee, shiftFilter, emplMap, selectedDate));
+    } else {
+      hours = [];
+      byCompany = {};
+      allRows = [];
+      companiesOrder = [];
+    }
     const companies = (companiesOrder || Object.keys(byCompany)).filter(c => (byCompany[c] || []).length > 0);
     const allRowsResolved = Array.isArray(allRows) && allRows.length > 0
       ? allRows
@@ -1438,10 +1690,17 @@ function setupEventListeners() {
     if (!listEl) return;
     const row = document.createElement('div');
     row.className = 'telegram-chat-row';
+    const companyOptions = emplCompanies.length
+      ? emplCompanies.map(co => `<option value="${escAttr(co)}">${escAttr(co)}</option>`).join('')
+      : '<option value="" disabled>Нет компаний</option>';
     row.innerHTML = `
-      <input type="text" class="form-control tg-chat-id" placeholder="Chat ID (-100... или id пользователя)" value="" title="Chat ID">
-      <input type="text" class="form-control tg-thread-cons" placeholder="Thread консолидации" value="" title="ID темы для ошибок комплектации">
-      <input type="text" class="form-control tg-thread-stats" placeholder="Thread статистики" value="" title="ID темы для статистики">
+      <label class="tg-enabled-wrap"><input type="checkbox" class="tg-enabled" checked> Вкл</label>
+      <input type="text" class="form-control tg-chat-id" placeholder="Chat ID" value="" title="Chat ID">
+      <input type="text" class="form-control tg-thread-cons" placeholder="Thread консолидации" value="">
+      <input type="text" class="form-control tg-thread-stats" placeholder="Thread статистики" value="">
+      <select multiple class="form-control tg-companies" title="Пусто = все компании">
+        ${companyOptions}
+      </select>
       <button type="button" class="btn btn-icon btn-icon-del btn-telegram-del" title="Удалить чат">✕</button>
     `;
     row.querySelector('.btn-telegram-del').addEventListener('click', () => row.remove());
@@ -1457,6 +1716,11 @@ function setupEventListeners() {
       const chatId = (row.querySelector('.tg-chat-id')?.value || '').trim();
       const threadIdConsolidation = (row.querySelector('.tg-thread-cons')?.value || '').trim();
       const threadIdStats = (row.querySelector('.tg-thread-stats')?.value || '').trim();
+      const enabled = (row.querySelector('.tg-enabled'))?.checked !== false;
+      const companiesSelect = row.querySelector('.tg-companies');
+      const companiesFilter = companiesSelect
+        ? Array.from(companiesSelect.selectedOptions).map(opt => opt.value).filter(Boolean)
+        : [];
       if (!chatId) continue;
       if (threadIdConsolidation && !/^\d+$/.test(threadIdConsolidation)) {
         showNotification('Thread ID консолидации должен быть целым положительным числом', 'error');
@@ -1466,7 +1730,7 @@ function setupEventListeners() {
         showNotification('Thread ID статистики должен быть целым положительным числом', 'error');
         return;
       }
-      telegramChats.push({ chatId, threadIdConsolidation, threadIdStats, label: '' });
+      telegramChats.push({ chatId, threadIdConsolidation, threadIdStats, label: '', enabled, companiesFilter });
     }
     if (!telegramChats.length) {
       showNotification('Добавьте хотя бы один чат с Chat ID', 'error');

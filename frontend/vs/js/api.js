@@ -139,6 +139,35 @@ export async function getDateItems(date, { fromHour, toHour, shift } = {}) {
   return r.json();
 }
 
+/** Быстрая сводка за дату и смену (цифры без полного списка операций). */
+export async function getDateSummary(date, { shift } = {}) {
+  const params = new URLSearchParams();
+  if (shift === 'day' || shift === 'night') params.set('shift', shift);
+  const qs = params.toString();
+  const url = `${API}/date/${encodeURIComponent(date)}/summary` + (qs ? `?${qs}` : '');
+  const r = await fetch(url, { credentials });
+  return r.json();
+}
+
+/** Сохранить данные хранения (picking-selection) за дату и смену в data на сервере. */
+export async function putDateStorage(date, shift, { totalStorageCount, storageByHour, totalWeightGrams, weightByEmployee }) {
+  const r = await fetch(`${API}/date/${encodeURIComponent(date)}/storage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      shift: shift || 'day',
+      totalStorageCount: totalStorageCount || 0,
+      storageByHour: storageByHour || {},
+      totalWeightGrams: totalWeightGrams || 0,
+      weightByEmployee: weightByEmployee && typeof weightByEmployee === 'object' ? weightByEmployee : {},
+    }),
+    credentials,
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+
 export async function scheduleStart() {
   const r = await fetch(`${API}/schedule/start`, { method: 'POST' });
   return r.json();
@@ -164,15 +193,18 @@ export async function getEmployees() {
   return r.json();
 }
 
-/** Отправить PNG по компаниям как файлы (документы) в Telegram. items: [{ blob, caption, filename }]. С cookie для менеджера — уходит в привязанный чат. */
-export async function sendHourlyStatsTelegram(items) {
+/** Отправить PNG по компаниям как файлы (документы) в Telegram. items: [{ blob, caption, filename, companyKey? }]. companyKey: 'Full' | имя компании — для фильтра по чатам. */
+export async function sendHourlyStatsTelegram(items, companiesPerFile = null) {
   const fd = new FormData();
   const captions = [];
+  const keys = [];
   items.forEach((item, i) => {
     fd.append('documents', item.blob, item.filename || `hourly_${i + 1}.png`);
     captions.push(item.caption || '');
+    keys.push(item.companyKey != null ? item.companyKey : (companiesPerFile && companiesPerFile[i]) || '');
   });
   fd.append('captions', JSON.stringify(captions));
+  fd.append('companiesPerFile', JSON.stringify(keys));
   const r = await fetch(`${API}/stats/send-hourly-telegram`, { method: 'POST', body: fd, credentials });
   return r.json();
 }
@@ -320,6 +352,102 @@ export async function sendComplaintsToTelegram(complaintIds) {
 
 const SAMOKAT_STOCKS_URL = 'https://api.samokat.ru/wmsops-wwh/stocks/changes/search';
 
+/** API задач отбора (хранение): sourceCellsCount = кол-во задач в хранении по curl.md */
+const SAMOKAT_PICKING_SELECTION_URL = 'https://api-p01.samokat.ru/wmsout-wwh/picking-selection/tasks';
+
+/** Зоны Сухой и Холод для запроса picking-selection/tasks */
+const PICKING_SELECTION_SOURCE_ZONE_IDS = [
+  '0b29f9ce-9549-435e-b7c2-ecdd3e937057',
+  'c976ff6d-865c-472c-a754-cee17e93e63d',
+];
+
+/**
+ * Загрузка задач отбора (хранение) за период. pageSize: 100 как в рабочем curl (1000 даёт INVALID_FILTER_REQUEST).
+ * Возвращает { items, totalStorageCount, storageByHour }. Учитываем только часы смены (день 9–20, ночь 21–8).
+ */
+export async function getPickingSelectionTasks(token, { dateFrom, dateTo }, shiftFilter = 'day') {
+  const pageSize = 100;
+  const body = {
+    dateFrom,
+    dateTo,
+    status: ['COMPLETED'],
+    shipToId: null,
+    sourceZoneId: PICKING_SELECTION_SOURCE_ZONE_IDS,
+    shipmentTemperatureMode: null,
+    shipmentNumber: null,
+    routeNumber: null,
+    targetHandlingUnitBarcode: null,
+    responsibleUserId: null,
+    pageNumber: 1,
+    pageSize,
+  };
+  const headers = {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+    'Origin': 'https://wwh.samokat.ru',
+    'Referer': 'https://wwh.samokat.ru/',
+    'Authorization': `Bearer ${token}`,
+  };
+  let allItems = [];
+  let total = 0;
+  let page = 1;
+  for (;;) {
+    const r = await fetch(SAMOKAT_PICKING_SELECTION_URL, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ ...body, pageNumber: page, pageSize }),
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      throw new Error(`picking-selection: ${r.status} ${t.slice(0, 200)}`);
+    }
+    const data = await r.json();
+    if (data?.error) throw new Error(`picking-selection: ${data.error}`);
+    const value = data?.value || data;
+    const items = Array.isArray(value?.items) ? value.items : [];
+    allItems = allItems.concat(items);
+    total = value?.total ?? value?.totalElements ?? total + items.length;
+    if (items.length < pageSize) break;
+    page++;
+    if (page > 500) break;
+  }
+  const MOSCOW_OFFSET_MS = 3 * 60 * 60 * 1000;
+  const isInShift = (h) => shiftFilter === 'day' ? (h >= 9 && h <= 20) : (h >= 21 || h <= 8);
+  const storageByHour = {};
+  let totalStorageCount = 0;
+  for (const item of allItems) {
+    const cnt = Number(item.sourceCellsCount) || 0;
+    const ts = item.createdAt;
+    if (!ts) continue;
+    const moscow = new Date(new Date(ts).getTime() + MOSCOW_OFFSET_MS);
+    const h = moscow.getUTCHours();
+    if (!isInShift(h)) continue;
+    totalStorageCount += cnt;
+    if (cnt > 0) storageByHour[h] = (storageByHour[h] || 0) + cnt;
+  }
+  /** Вес: сумма по всем элементам по имени (ключ «Фамилия Имя»). Дублируем под «Имя Фамилия», чтобы совпало с таблицей. */
+  const weightByEmployee = {};
+  let totalWeightGrams = 0;
+  for (const item of allItems) {
+    const w = Number(item.weightInGrams) || 0;
+    if (w <= 0) continue;
+    totalWeightGrams += w;
+    const ru = item.responsibleUser;
+    if (ru) {
+      const name = [ru.lastName, ru.firstName].filter(Boolean).join(' ').trim();
+      if (name) weightByEmployee[name] = (weightByEmployee[name] || 0) + w;
+    }
+  }
+  for (const [name, grams] of Object.entries(weightByEmployee)) {
+    const parts = name.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      const rev = parts.slice().reverse().join(' ').trim();
+      if (rev !== name && weightByEmployee[rev] === undefined) weightByEmployee[rev] = grams;
+    }
+  }
+  return { items: allItems, totalStorageCount, storageByHour, totalWeightGrams, weightByEmployee };
+}
+
 function buildBodyForBrowser(options = {}) {
   let from = options.operationCompletedAtFrom;
   let to = options.operationCompletedAtTo;
@@ -354,7 +482,7 @@ function buildBodyForBrowser(options = {}) {
   return {
     productId: null,
     parts: [],
-    operationTypes: ['PIECE_SELECTION_PICKING', 'PICK_BY_LINE'],
+    operationTypes: ['PICK_BY_LINE', 'PIECE_SELECTION_PICKING'],
     sourceCellId: null,
     targetCellId: null,
     sourceHandlingUnitBarcode: null,
@@ -408,7 +536,7 @@ export async function fetchLastCompletedForExecutor(token, executorId, fromIso, 
   const body = {
     productId: null,
     parts: [],
-    operationTypes: ['PIECE_SELECTION_PICKING', 'PICK_BY_LINE'],
+    operationTypes: ['PICK_BY_LINE'],
     sourceCellId: null,
     targetCellId: null,
     sourceHandlingUnitBarcode: null,

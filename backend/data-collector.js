@@ -24,12 +24,46 @@ const DEFAULT_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
 };
 
+/** Москва UTC+3. Текущая дата и час в Москве. */
+function getMoscowNow() {
+  const moscow = new Date(Date.now() + 3 * 60 * 60 * 1000);
+  return {
+    y: moscow.getUTCFullYear(),
+    m: moscow.getUTCMonth(),
+    d: moscow.getUTCDate(),
+    h: moscow.getUTCHours(),
+  };
+}
+
+/** Диапазон текущей смены в Москве: день 09:00–20:59, ночь 21:00–08:59 след. дня. Возвращает ISO (UTC). */
+function getCurrentShiftRangeMoscow() {
+  const n = getMoscowNow();
+  const pad = (x) => String(x).padStart(2, '0');
+  if (n.h >= 9 && n.h < 21) {
+    // День: сегодня 09:00–20:59 Москва = 06:00–17:59 UTC
+    const from = `${n.y}-${pad(n.m + 1)}-${pad(n.d)}T06:00:00.000Z`;
+    const to = `${n.y}-${pad(n.m + 1)}-${pad(n.d)}T17:59:59.999Z`;
+    return { from, to };
+  }
+  // Ночь: с 21:00 текущего дня по 08:59 следующего (Москва)
+  const from = `${n.y}-${pad(n.m + 1)}-${pad(n.d)}T18:00:00.000Z`; // 21:00 МСК
+  const next = new Date(Date.UTC(n.y, n.m, n.d));
+  next.setUTCDate(next.getUTCDate() + 1);
+  const to = next.toISOString().slice(0, 10) + 'T05:59:59.999Z'; // 08:59 МСК след. дня
+  return { from, to };
+}
+
 function buildBody(options = {}) {
-  const from = options.operationCompletedAtFrom || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10) + 'T21:00:00.000Z';
-  const to = options.operationCompletedAtTo || new Date().toISOString().slice(0, 10) + 'T20:59:59.000Z';
+  let from = options.operationCompletedAtFrom;
+  let to = options.operationCompletedAtTo;
+  if (from == null || to == null) {
+    const range = getCurrentShiftRangeMoscow();
+    from = from ?? range.from;
+    to = to ?? range.to;
+  }
   const operationTypes = Array.isArray(options.operationTypes) && options.operationTypes.length
     ? options.operationTypes
-    : ['PIECE_SELECTION_PICKING', 'PICK_BY_LINE'];
+    : ['PICK_BY_LINE', 'PIECE_SELECTION_PICKING'];
   return {
     productId: null,
     parts: [],

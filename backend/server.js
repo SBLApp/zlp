@@ -50,6 +50,8 @@ function loadConfig() {
         chat.threadIdConsolidation = chat.threadId;
         chat.threadIdStats = chat.threadId;
       }
+      if (chat.enabled === undefined) chat.enabled = true;
+      if (!Array.isArray(chat.companiesFilter)) chat.companiesFilter = [];
     }
     if (out.telegramChats.length === 0 && (out.telegramChatId || '').trim()) {
       out.telegramChats = [{
@@ -57,6 +59,8 @@ function loadConfig() {
         threadIdConsolidation: String(out.telegramThreadId || '').trim(),
         threadIdStats: String(out.telegramThreadId || '').trim(),
         label: '',
+        enabled: true,
+        companiesFilter: [],
       }];
     }
     return out;
@@ -65,7 +69,7 @@ function loadConfig() {
   }
 }
 
-/** Список чатов для отправки: из telegramChats или legacy одного chatId. */
+/** Список чатов для отправки: из telegramChats, только enabled !== false. companiesFilter: пустой = все компании. */
 function getTelegramChats(config) {
   const list = Array.isArray(config.telegramChats) && config.telegramChats.length > 0
     ? config.telegramChats
@@ -74,15 +78,18 @@ function getTelegramChats(config) {
           chatId: String(config.telegramChatId).trim(),
           threadIdConsolidation: String(config.telegramThreadId || '').trim(),
           threadIdStats: String(config.telegramThreadId || '').trim(),
+          enabled: true,
+          companiesFilter: [],
         }]
       : []);
   return list
+    .filter(c => c.enabled !== false && String(c.chatId || '').trim())
     .map(c => ({
       chatId: String(c.chatId || '').trim(),
       threadIdConsolidation: parseTelegramThreadId(c.threadIdConsolidation) || parseTelegramThreadId(c.threadId),
       threadIdStats: parseTelegramThreadId(c.threadIdStats) || parseTelegramThreadId(c.threadId),
-    }))
-    .filter(c => c.chatId);
+      companiesFilter: Array.isArray(c.companiesFilter) ? c.companiesFilter.filter(x => x != null && String(x).trim()) : [],
+    }));
 }
 
 function saveConfig(config) {
@@ -184,6 +191,8 @@ app.put('/api/config', (req, res) => {
             threadIdConsolidation: String(c.threadIdConsolidation != null ? c.threadIdConsolidation : '').trim(),
             threadIdStats: String(c.threadIdStats != null ? c.threadIdStats : '').trim(),
             label: String(c.label != null ? c.label : '').trim(),
+            enabled: c.enabled !== false,
+            companiesFilter: Array.isArray(c.companiesFilter) ? c.companiesFilter.map(x => String(x).trim()).filter(Boolean) : [],
           })).filter(c => c.chatId)
         : [];
       if (config.telegramChats.length === 0) config.telegramChatId = '';
@@ -297,6 +306,7 @@ function formatComplaintForTelegram(c, photoUrl, config = {}, companyResolved = 
   const company = companyResolved != null ? companyResolved : (c.company != null && String(c.company).trim() !== '' ? c.company : '—');
   const v = (x) => escapeTgMarkdown(tgSafe(x) || '—');
   const dateEsc = escapeTgMarkdown(dateText);
+  // Markdown: *текст* = жирный в Telegram
   return [
     `*Компания:* ${v(company)}`,
     `*Нарушитель:* ${v(c.violator)}`,
@@ -350,8 +360,8 @@ async function sendTelegramPhotoFromBuffer(botToken, chatId, caption, buffer, ph
   const form = new FormData();
   form.append('chat_id', String(chatId));
   if (threadId) form.append('message_thread_id', String(threadId));
-  if (parseMode) form.append('parse_mode', String(parseMode));
   if (caption) form.append('caption', caption);
+  if (parseMode) form.append('parse_mode', parseMode);
   const blob = new Blob([buffer]);
   form.append('photo', blob, photoFilename);
   const response = await fetch(url, { method: 'POST', body: form });
@@ -385,13 +395,15 @@ async function sendTelegramMediaGroup(botToken, chatId, caption, files, threadId
   const form = new FormData();
   form.append('chat_id', String(chatId));
   if (threadId) form.append('message_thread_id', String(threadId));
-  if (parseMode) form.append('parse_mode', String(parseMode));
 
-  const media = files.map((f, i) => ({
-    type: 'photo',
-    media: `attach://photo${i}`,
-    ...(i === 0 && caption ? { caption } : {}),
-  }));
+  const media = files.map((f, i) => {
+    const item = { type: 'photo', media: `attach://photo${i}` };
+    if (i === 0 && caption) {
+      item.caption = caption;
+      if (parseMode) item.parse_mode = parseMode;
+    }
+    return item;
+  });
   form.append('media', JSON.stringify(media));
 
   files.forEach((f, i) => {
@@ -802,6 +814,47 @@ app.get('/api/date/:date/items', vsSessionOptional, (req, res) => {
   }
 });
 
+app.get('/api/date/:date/summary', vsSessionOptional, (req, res) => {
+  try {
+    const dateStr = req.params.date;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return res.status(400).json({ error: 'Неверный формат даты (YYYY-MM-DD)' });
+    }
+    let shift = req.query.shift === 'day' || req.query.shift === 'night' ? req.query.shift : undefined;
+    const session = req.vsSession;
+    if (session?.role === 'supervisor' && session.shiftType) {
+      if (shift && shift !== session.shiftType) {
+        return res.status(403).json({ error: 'Доступ только к своей смене' });
+      }
+      shift = session.shiftType;
+    }
+    const emplMap = getEmplMapFioToCompany();
+    const getCompany = (fio) => getCompanyByFio(emplMap, fio);
+    const summary = storage.getDateSummary(dateStr, { shift }, { getCompany });
+    res.json({ date: dateStr, shift: shift || null, ...summary });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/date/:date/storage', vsSessionOptional, (req, res) => {
+  try {
+    const dateStr = req.params.date;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return res.status(400).json({ error: 'Неверный формат даты (YYYY-MM-DD)' });
+    }
+    const shift = req.body?.shift === 'night' ? 'night' : 'day';
+    const totalStorageCount = Number(req.body?.totalStorageCount) || 0;
+    const storageByHour = req.body?.storageByHour && typeof req.body.storageByHour === 'object' ? req.body.storageByHour : {};
+    const totalWeightGrams = Number(req.body?.totalWeightGrams) || 0;
+    const weightByEmployee = req.body?.weightByEmployee && typeof req.body.weightByEmployee === 'object' ? req.body.weightByEmployee : {};
+    storage.saveStorageForDate(dateStr, shift, { totalStorageCount, storageByHour, totalWeightGrams, weightByEmployee });
+    res.json({ ok: true, date: dateStr, shift });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/shifts', vsSessionOptional, (req, res) => {
   try {
     let shifts = storage.listShifts();
@@ -1195,15 +1248,18 @@ app.post('/api/stats/send-hourly-telegram', vsSessionOptional, uploadMemory.any(
       return res.status(400).json({ ok: false, error: 'Не получены файлы' });
     }
     let captions = [];
+    let companiesPerFile = [];
     try {
       if (req.body && req.body.captions) captions = JSON.parse(req.body.captions);
+      if (req.body && req.body.companiesPerFile) companiesPerFile = JSON.parse(req.body.companiesPerFile);
     } catch (_) {}
+    if (!Array.isArray(companiesPerFile)) companiesPerFile = [];
 
     let chats = [];
     if (req.vsSession?.role === 'manager' && req.vsSession?.login) {
       const managerChatId = vsAuth.getTelegramChatId(req.vsSession.login);
       if (managerChatId) {
-        chats = [{ chatId: managerChatId, threadIdStats: null }];
+        chats = [{ chatId: managerChatId, threadIdStats: null, companiesFilter: [] }];
       }
     }
     if (!chats.length) {
@@ -1213,13 +1269,22 @@ app.post('/api/stats/send-hourly-telegram', vsSessionOptional, uploadMemory.any(
       }
     }
 
+    const allowFileForChat = (fileIndex, chat) => {
+      if (!Array.isArray(chat.companiesFilter) || chat.companiesFilter.length === 0) return true;
+      const key = companiesPerFile[fileIndex];
+      return key === 'Full' || (key && chat.companiesFilter.includes(key));
+    };
+
     for (const chat of chats) {
       const threadId = chat.threadIdStats;
+      let sentForChat = 0;
       for (let i = 0; i < files.length; i++) {
+        if (!allowFileForChat(i, chat)) continue;
         const f = files[i];
         const caption = Array.isArray(captions) && captions[i] != null ? String(captions[i]) : `Сотрудники по часам ${i + 1}`;
         const filename = (f.originalname && /\.png$/i.test(f.originalname)) ? f.originalname : `hourly_${i + 1}.png`;
         await sendTelegramDocumentFromBuffer(botToken, chat.chatId, caption, f.buffer, filename, threadId);
+        sentForChat++;
       }
     }
     res.json({ ok: true, sent: files.length });

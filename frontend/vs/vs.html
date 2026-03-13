@@ -160,7 +160,7 @@
         <div class="shift-toggle-wrap">
           <span class="shift-toggle-label">Смена:</span>
           <button type="button" class="filter-chip shift-toggle-btn active" data-shift="day" id="shift-toggle-day-stats">День (9–21)</button>
-          <button type="button" class="filter-chip shift-toggle-btn" data-shift="night" id="shift-toggle-night-stats">Ночь (22–9)</button>
+          <button type="button" class="filter-chip shift-toggle-btn" data-shift="night" id="shift-toggle-night-stats">Ночь (21–9)</button>
         </div>
         <div class="fetch-range-wrap">
           <label for="fetch-hour-from">Выгрузить с</label>
@@ -189,8 +189,15 @@
       </div>
       <div class="card company-summary-card" style="margin-bottom:20px;">
         <div class="card-header">
-          <span>Сводка по компаниям</span>
-          <span class="card-header-sub">Сотрудники, СЗЧ (), Итог СЗ</span>
+          <div>
+            <span>Сводка по компаниям</span>
+            <span class="card-header-sub">Сотрудники, СЗЧ (), Итог СЗ</span>
+          </div>
+          <label class="company-summary-toggle" title="Показать колонки по часам">
+            <input type="checkbox" id="company-summary-show-hours">
+            <span class="company-summary-toggle-slider"></span>
+            <span class="company-summary-toggle-label">по часам</span>
+          </label>
         </div>
         <div id="company-summary-table-wrap">
           <div class="empty-row" style="padding:16px;text-align:center;color:var(--text-muted)">Нет данных</div>
@@ -206,9 +213,14 @@
         </div>
       </div>
       <div class="card" style="margin-bottom:20px;">
-        <div class="card-header">
+        <div class="card-header card-header-hourly">
           <span>Сотрудники по часам</span>
-          <div style="display:flex;gap:8px;align-items:center;">
+          <div class="card-header-hourly-controls">
+            <label class="he-idles-toggle" title="Показать колонку «Простои >15 мин» (паузы между задачами)">
+              <input type="checkbox" id="hourly-show-idles" checked>
+              <span class="he-idles-toggle-slider"></span>
+              <span class="he-idles-toggle-label">Простои &gt;15 мин</span>
+            </label>
             <button type="button" class="btn btn-secondary" id="btn-export-hourly-xlsx" title="Скачать таблицу в Excel с раскраской СЗ">↓ XLSX</button>
             <button type="button" class="btn btn-secondary" id="btn-hourly-telegram-png" title="Отправить статистику (PNG) в Telegram">📨 В Telegram</button>
           </div>
@@ -253,7 +265,7 @@
         <div class="shift-toggle-wrap">
           <span class="shift-toggle-label">Смена:</span>
           <button type="button" class="filter-chip shift-toggle-btn active" data-shift="day" id="shift-toggle-day-data">День (9–21)</button>
-          <button type="button" class="filter-chip shift-toggle-btn" data-shift="night" id="shift-toggle-night-data">Ночь (22–9)</button>
+          <button type="button" class="filter-chip shift-toggle-btn" data-shift="night" id="shift-toggle-night-data">Ночь (21–9)</button>
         </div>
         <div class="toolbar-right">
           <button class="btn btn-secondary" id="btn-export">↓ Экспорт CSV</button>
@@ -754,12 +766,12 @@
               </div>
             </div>
             <div class="setting-divider"></div>
-            <div class="setting-row">
+            <div class="setting-row setting-row-stack">
               <div class="setting-info">
                 <div class="setting-label">Чаты и пользователи</div>
-                <div class="setting-desc">Добавьте один или несколько чатов/групп. Для каждого укажите Chat ID и Thread ID тем: «Ошибки комплектации» (жалобы) и «Статистика» (отчёты по часам).</div>
+                <div class="setting-desc">«Вкл» — чат получает уведомления; снять — отключить. «Компании» — выпадающий список (ничего не выбрано = все). Thread ID для тем «Ошибки комплектации» и «Статистика».</div>
               </div>
-              <div class="setting-control" style="flex-direction:column;align-items:flex-start;">
+              <div class="setting-control setting-control-full">
                 <div id="telegram-chats-list" class="telegram-chats-list"></div>
                 <button type="button" class="btn btn-sm btn-secondary" id="btn-telegram-add-chat">+ Добавить чат</button>
               </div>

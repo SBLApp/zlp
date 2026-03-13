@@ -1,6 +1,6 @@
 {
-  "token": "eyJraWQiOiI2MTg2OTEiLCJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MTkyNTY0NTQ1IiwiaWF0IjoxNzczMTY5ODM5LCJleHAiOjE3NzMxNzAxMzksImF1ZCI6Imh0dHBzOi8vc2Ftb2thdC5ydSIsInNjb3BlIjpbIndtc19jaGllZl9zdG9ja21hbiJdLCJjbGllbnRfaWQiOiJXTVMiLCJkZXZpY2VfaWQiOm51bGwsInVzZXIiOnsidXNlcklkIjoiYTE1NzRmMGYtMTkyYi00N2QwLTgyNDYtOWJkYjNhYTllZTM5IiwidXNlclR5cGUiOiIifSwic3ViIjoiYTE1NzRmMGYtMTkyYi00N2QwLTgyNDYtOWJkYjNhYTllZTM5In0.SifL7CA9-2kMqtsO1l8KNk9LUkH2aSHjJ1xSWZ9JqtnjZzbm4ZgEn6USWBBqrmX2AHRXSdtoj3aRJM1kURTkbgl5EFPxQ1v-jBKCj_ABSNABfsBmdyHNKgF4HJ0wv_n89HBHz-NlJN80h2c5GhTc425-k5FgTTcBGlbhAnuCMnk",
-  "refreshToken": "d9f60f826bd524d6fdbf12755da5512ba830892da266209ee89e418675818b4a",
+  "token": "eyJraWQiOiI2MTg2OTEiLCJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MjA1NDA1NTY1IiwiaWF0IjoxNzczNDIxMDE4LCJleHAiOjE3NzM0MjEzMTgsImF1ZCI6Imh0dHBzOi8vc2Ftb2thdC5ydSIsInNjb3BlIjpbIndtc19jaGllZl9zdG9ja21hbiJdLCJjbGllbnRfaWQiOiJXTVMiLCJkZXZpY2VfaWQiOm51bGwsInVzZXIiOnsidXNlcklkIjoiYTE1NzRmMGYtMTkyYi00N2QwLTgyNDYtOWJkYjNhYTllZTM5IiwidXNlclR5cGUiOiIifSwic3ViIjoiYTE1NzRmMGYtMTkyYi00N2QwLTgyNDYtOWJkYjNhYTllZTM5In0.S0PR5lcKPsZmbBehIeleexRFH-lBb93fkkD4kIuHatxVamob8DfoMNcoJHFVaLZu3gIJmk2R0tV_SREstbAFj-rhVY93VbtVAWE_PZ59Qq09ofrT_RNuAQcyMiOMpR6U2Z1290sFYL0BaclW7MXYmhiL14muq7hVXIAkiHP91LE",
+  "refreshToken": "d1e6743c83b80c10ae9c6735402fd5d4f824eaa0bbfc4335737579a19241157f",
   "intervalMinutes": 1,
   "pageSize": 500,
   "apiUrl": "https://api.samokat.ru/wmsops-wwh/stocks/changes/search",
@@ -14,7 +14,9 @@
       "chatId": "544569923",
       "threadIdConsolidation": "",
       "threadIdStats": "",
-      "label": ""
+      "label": "",
+      "enabled": true,
+      "companiesFilter": []
     }
   ],
   "telegramTimezone": "Europe/Moscow",

@@ -2,12 +2,16 @@
  * auth.js — авторизация /vs: сессия (cookie) + токен Samokat, роли и модули
  *
  * Логика: токен получаем на первичной авторизации; если не получен — дальше не пропускаем.
- * Сессия хранится в cookie (vs_sid), токен Samokat — в памяти и refresh в localStorage.
+ * Сессия хранится в cookie (vs_sid). Access- и refresh-токены Samokat — в localStorage,
+ * чтобы после перезагрузки страницы токен восстанавливался без повторного ввода пароля.
  */
 
 import * as api from './api.js';
 
 const LS_REFRESH_KEY = 'wms_refresh_token';
+const LS_ACCESS_KEY = 'wms_access_token';
+const LS_ACCESS_EXPIRY_KEY = 'wms_access_token_expiry';
+const EXPIRY_MARGIN_MS = 60 * 1000; // считаем токен недействительным за 1 мин до истечения
 
 let accessToken = null;
 let accessTokenExpiry = null;
@@ -53,7 +57,7 @@ function notifyChange(loggedIn) {
   if (onAuthChange) onAuthChange(loggedIn);
 }
 
-// ─── Сохранение refreshToken в localStorage ──────────────────────────────────
+// ─── Сохранение токенов в localStorage (постоянная поддержка после перезагрузки) ─
 
 function saveRefreshToken(token) {
   refreshToken = token;
@@ -64,8 +68,34 @@ function saveRefreshToken(token) {
   }
 }
 
+function saveAccessToken(token, expiryMs) {
+  accessToken = token;
+  accessTokenExpiry = expiryMs || null;
+  if (token) {
+    try {
+      localStorage.setItem(LS_ACCESS_KEY, token);
+      localStorage.setItem(LS_ACCESS_EXPIRY_KEY, String(expiryMs || 0));
+    } catch { /* ignore */ }
+  } else {
+    try {
+      localStorage.removeItem(LS_ACCESS_KEY);
+      localStorage.removeItem(LS_ACCESS_EXPIRY_KEY);
+    } catch { /* ignore */ }
+  }
+}
+
 function loadRefreshTokenFromStorage() {
   try { return localStorage.getItem(LS_REFRESH_KEY) || null; } catch { return null; }
+}
+
+function loadAccessTokenFromStorage() {
+  try {
+    const token = localStorage.getItem(LS_ACCESS_KEY);
+    const expiry = parseInt(localStorage.getItem(LS_ACCESS_EXPIRY_KEY) || '0', 10);
+    if (!token || expiry <= 0) return null;
+    if (expiry <= Date.now() + EXPIRY_MARGIN_MS) return null;
+    return { token, expiry };
+  } catch { return null; }
 }
 
 // ─── Публичные функции ───────────────────────────────────────────────────────
@@ -86,9 +116,9 @@ export async function login(loginValue, password) {
   }
 
   if (!data?.accessToken) throw new Error('Токен не получен — вход невозможен');
-  accessToken = data.accessToken;
-  accessTokenExpiry = Date.now() + (data.expiresIn || 300) * 1000;
+  const expiry = Date.now() + (data.expiresIn || 300) * 1000;
   saveRefreshToken(data.refreshToken || null);
+  saveAccessToken(data.accessToken, expiry);
   setRoleModules(data.role, data.modules, data.companyIds);
   await api.putConfig({ token: accessToken, refreshToken: refreshToken || '' });
   scheduleRefresh();
@@ -97,8 +127,7 @@ export async function login(loginValue, password) {
 
 export async function logout() {
   await api.logoutVs();
-  accessToken = null;
-  accessTokenExpiry = null;
+  saveAccessToken(null);
   saveRefreshToken(null);
   setRoleModules(null, [], []);
   if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
@@ -117,20 +146,30 @@ export async function tryRestoreSession() {
   setRoleModules(me.role, me.modules || [], me.companyIds);
 
   if (me.allowWithoutToken) {
-    accessToken = null;
+    saveAccessToken(null);
     saveRefreshToken(null);
     notifyChange(true);
     return true;
   }
 
-  const stored = loadRefreshTokenFromStorage();
-  if (!stored) {
+  const storedAccess = loadAccessTokenFromStorage();
+  if (storedAccess) {
+    accessToken = storedAccess.token;
+    accessTokenExpiry = storedAccess.expiry;
+    scheduleRefresh();
+    notifyChange(true);
+    return true;
+  }
+
+  const storedRefresh = loadRefreshTokenFromStorage();
+  if (!storedRefresh) {
     notifyChange(false);
     return false;
   }
-  refreshToken = stored;
+  refreshToken = storedRefresh;
   const ok = await doRefresh();
   if (!ok) {
+    saveAccessToken(null);
     saveRefreshToken(null);
     notifyChange(false);
     return false;
@@ -146,13 +185,11 @@ async function doRefresh() {
     const data = await api.refreshSamokatToken(refreshToken);
     if (!data?.value?.accessToken) return false;
 
-    accessToken = data.value.accessToken;
-    accessTokenExpiry = Date.now() + (data.value.expiresIn || 300) * 1000;
+    const expiry = Date.now() + (data.value.expiresIn || 300) * 1000;
+    saveAccessToken(data.value.accessToken, expiry);
 
-    // Обновляем refreshToken если пришёл новый
     if (data.value.refreshToken) saveRefreshToken(data.value.refreshToken);
 
-    // Синхронизируем с сервером для фонового автосбора
     await api.putConfig({ token: accessToken, refreshToken: refreshToken || '' });
 
     notifyChange(true);
@@ -171,7 +208,7 @@ function scheduleRefresh() {
   refreshTimer = setTimeout(async () => {
     const ok = await doRefresh();
     if (!ok) {
-      accessToken = null;
+      saveAccessToken(null);
       saveRefreshToken(null);
       notifyChange(false);
     }

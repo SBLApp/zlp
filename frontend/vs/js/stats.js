@@ -64,7 +64,8 @@ export function calcStats(items, emplMap, filterCompany) {
     const isKdk = type === 'PICK_BY_LINE';
     const tk = getTaskKey(item);
     hh.taskKeys.add(tk);
-    if (isKdk) hh.kdkTaskKeys.add(tk); else hh.storageOps++;
+    if (isKdk) hh.kdkTaskKeys.add(tk);
+    else if (type === 'PIECE_SELECTION_PICKING') hh.storageOps++;
     hh.kdkOps = hh.kdkTaskKeys.size;
     if (item.executorId || item.executor) hh.employees.add(item.executorId || item.executor);
   }
@@ -104,20 +105,27 @@ export function renderStats(stats, shiftLabel) {
   const container = el('stats-cards');
   if (!container) return;
 
+  const totalStorage = (stats.hourly || []).reduce((s, h) => s + (h.storageOps || 0), 0);
+
   container.innerHTML = `
     <div class="stat-card">
       <div class="stat-icon">📦</div>
-      <div class="stat-value">${stats.totalOps.toLocaleString('ru-RU')}</div>
+      <div class="stat-value">${(stats.totalOps || 0).toLocaleString('ru-RU')}</div>
       <div class="stat-label">Операций</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">📋</div>
+      <div class="stat-value">${totalStorage.toLocaleString('ru-RU')}</div>
+      <div class="stat-label">Задач (хранение)</div>
     </div>
     <div class="stat-card stat-card--green">
       <div class="stat-icon">🔢</div>
-      <div class="stat-value">${stats.totalQty.toLocaleString('ru-RU')}</div>
+      <div class="stat-value">${(stats.totalQty || 0).toLocaleString('ru-RU')}</div>
       <div class="stat-label">Единиц товара</div>
     </div>
     <div class="stat-card">
       <div class="stat-icon">👷</div>
-      <div class="stat-value">${stats.executors.length}</div>
+      <div class="stat-value">${(stats.executors || []).length}</div>
       <div class="stat-label">Сотрудников</div>
     </div>
     <div class="stat-card">
@@ -161,8 +169,21 @@ export function renderExecutorTable(executors) {
 
 /** Часы для отображения: день — колонка 10 = 09:00–10:00, колонка 21 = 20:00–21:00 (номер колонки = конец часа) */
 const DAY_HOURS = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
-/** Ночь: колонка 23 = 22:00–23:00, 0 = 23:00–00:00, … 10 = 09:00–10:00 */
-const NIGHT_HOURS = [23, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+/** Ночь: колонка 22 = 21:00–22:00, 23 = 22:00–23:00, 0 = 23:00–00:00, … 9 = 08:00–09:00 (смена 21–09) */
+const NIGHT_HOURS = [22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+/** По storageByHour (ключи 0–23, час МСК) и списку колонок cols строит byHour для строки «Хранение». col = (hour+1)%24. */
+export function buildStorageRowForCols(storageByHour, cols) {
+  const byHour = {};
+  let total = 0;
+  for (const col of cols) {
+    const hour = (col - 1 + 24) % 24;
+    const v = (storageByHour[hour] ?? 0) + (storageByHour[String(hour)] ?? 0);
+    byHour[col] = v;
+    total += v;
+  }
+  return { byHour, total };
+}
 
 /**
  * Приводит массив по часам к порядку и диапазону смены; заполняет нулями отсутствующие часы.
@@ -351,6 +372,33 @@ export function getHourlyByEmployeeGroupedByCompany(items, shiftFilter, emplMap,
 }
 
 /**
+ * То же, что getHourlyByEmployeeGroupedByCompany, но из сохранённой сводки (когда allItems пуст).
+ * hourlyByEmployee: { hours: number[], rows: Array<{ name, byHour, total }> }
+ */
+export function getHourlyByEmployeeGroupedByCompanyFromSummary(hourlyByEmployee, shiftFilter, emplMap, selectedDate) {
+  const hours = filterHoursToPassed(selectedDate, shiftFilter);
+  const rows = Array.isArray(hourlyByEmployee?.rows) ? hourlyByEmployee.rows : [];
+  const getCompany = (name) => (emplMap && name ? (getCompanyByFio(emplMap, normalizeFio(name)) || '—') : '—');
+  const withCompany = rows.map(r => ({ ...r, company: getCompany(r.name) }));
+  const byCompany = new Map();
+  for (const r of withCompany) {
+    const c = r.company || '—';
+    if (!byCompany.has(c)) byCompany.set(c, []);
+    byCompany.get(c).push(r);
+  }
+  for (const arr of byCompany.values()) {
+    arr.sort((a, b) => (b.total - a.total));
+  }
+  const companyTotals = new Map();
+  for (const [c, arr] of byCompany) {
+    companyTotals.set(c, arr.reduce((s, r) => s + r.total, 0));
+  }
+  const companiesOrder = [...byCompany.keys()].sort((a, b) => (companyTotals.get(b) || 0) - (companyTotals.get(a) || 0));
+  const allRows = companiesOrder.flatMap(c => byCompany.get(c) || []);
+  return { hours, byCompany: Object.fromEntries(byCompany), allRows, companiesOrder };
+}
+
+/**
  * Данные для таблицы сводки по компаниям: Компания, сотруднико, СЗЧ, [часы 10..текущий], Итог.
  * СЗЧ = среднее задач в час = Итог / сотруднико / кол-во прошедших часов (без текущего).
  * hoursDisplay = прошедшие часы + текущий (в 15:56 → 10,11,12,13,14,15,16).
@@ -374,24 +422,29 @@ export function getCompanySummaryTableData(items, shiftFilter, emplMap, selected
 }
 
 /**
- * Рендер таблицы сводки по компаниям (Компания, сотруднико, СЗЧ, 10…текущий час, Итог) и подписи формул.
+ * Рендер таблицы сводки по компаниям (Компания, сотруднико, СЗЧ, [опционально часы], Итог) и подписи формул.
+ * showHours: true — с колонками по часам; false — только Компания, Сотрудников, СЗЧ, Итог.
  */
-export function renderCompanySummaryTable(rows, hoursDisplay = []) {
+export function renderCompanySummaryTable(rows, hoursDisplay = [], showHours = true) {
   const container = el('company-summary-table-wrap');
   if (!container) return;
   if (!rows.length) {
     container.innerHTML = '<div class="empty-row" style="padding:16px;text-align:center;color:var(--text-muted)">Нет данных</div>';
     return;
   }
-  const thHours = (hoursDisplay || []).map(col => `<th class="cs-th-hour" title="${String(col).padStart(2, '0')}:00">${col}</th>`).join('');
+  const thHours = showHours && (hoursDisplay || []).length
+    ? (hoursDisplay || []).map(col => `<th class="cs-th-hour" title="${String(col).padStart(2, '0')}:00">${col}</th>`).join('')
+    : '';
   const trRows = rows.map(r => {
-    const cellsHours = (hoursDisplay || []).map(col => `<td class="cs-td-num cs-td-hour">${r.byHour && r.byHour[col] != null ? r.byHour[col] : ''}</td>`).join('');
+    const cellsHours = showHours && (hoursDisplay || []).length
+      ? (hoursDisplay || []).map(col => `<td class="cs-td-num cs-td-hour">${r.byHour && r.byHour[col] != null ? r.byHour[col] : ''}</td>`).join('')
+      : '';
     return `
     <tr>
       <td class="cs-td-company">${escHtml(r.companyName)}</td>
       <td class="cs-td-num">${r.employeesCount}</td>
       <td class="cs-td-num">${r.szch}</td>
-      ${cellsHours}
+      ${thHours ? cellsHours : ''}
       <td class="cs-td-num">${r.totalTasks}</td>
     </tr>
   `;
@@ -417,9 +470,7 @@ export function renderCompanySummaryTable(rows, hoursDisplay = []) {
         <span class="cs-formula-label">СЗЧ — среднее задач в час:</span>
         <span class="cs-formula-text">сумма задач ÷ количество сотрудников ÷ количество прошедших часов (с 9:00 для дневной смены). Пример: Итог ∕ Сотрудников ∕ часы = СЗЧ</span>
       </div>
-      <div class="cs-formula-row">
-        <span class="cs-formula-label">Колонки по часам — сумма выполненных задач за каждый час (прошедшие + текущий). Итог — СЗ за все часы у компании.</span>
-      </div>
+      ${showHours ? '<div class="cs-formula-row"><span class="cs-formula-label">Колонки по часам — сумма выполненных задач за каждый час (прошедшие + текущий). Итог — СЗ за все часы у компании.</span></div>' : ''}
     </div>
   `;
 }
@@ -501,49 +552,168 @@ export function buildHourlyTableHtmlFullList(rows, hours, dateStr, shiftLabel) {
     </div>`;
 }
 
+/** Порог простоя по умолчанию для колонки «Простои» (мс). */
+const IDLE_THRESHOLD_MS = 15 * 60 * 1000;
+
 /**
- * Рендерит таблицу «Сотрудник по часам». emplMap — для колонки «Компания».
+ * Считает простои (паузы между операциями) по каждому сотруднику. items — операции с executor и completedAt.
+ * Возвращает { [имя]: "10:30–10:45, 14:00–14:20" }.
  */
-export function renderHourlyByEmployee(items, shiftFilter = 'day', emplMap = null) {
+export function calcIdlesByEmployee(items, thresholdMs = IDLE_THRESHOLD_MS) {
+  const byExecutor = new Map();
+  for (const item of items) {
+    const name = item.executor || '';
+    if (!name) continue;
+    const ts = item.completedAt;
+    if (!ts) continue;
+    if (!byExecutor.has(name)) byExecutor.set(name, []);
+    byExecutor.get(name).push(new Date(ts).getTime());
+  }
+  const out = {};
+  for (const [name, times] of byExecutor) {
+    if (times.length < 2) continue;
+    times.sort((a, b) => a - b);
+    const idles = [];
+    for (let i = 1; i < times.length; i++) {
+      if (times[i] - times[i - 1] >= thresholdMs) {
+        idles.push(formatTime(new Date(times[i - 1]).toISOString()) + '–' + formatTime(new Date(times[i]).toISOString()));
+      }
+    }
+    if (idles.length) out[name] = idles.join(', ');
+  }
+  return out;
+}
+
+/** Разбирает строку простоев вида "10:30–10:45, 14:00–14:20" в интервалы в минутах от начала смены (12 часов). */
+function parseIdleIntervalsForTimeline(raw, shiftFilter = 'day') {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  const str = String(raw);
+  const parts = str.split(',').map(p => p.trim()).filter(Boolean);
+  const out = [];
+  const re = /(\d{1,2}):(\d{2})\s*[–-]\s*(\d{1,2}):(\d{2})/;
+  const mapToShiftMinute = (h, m) => {
+    if (shiftFilter === 'night') {
+      // Ночь: 21–09. Ось 0–12ч: 0–3ч (21–24), 3–12ч (0–9).
+      if (h >= 21 && h <= 23) {
+        return (h - 21) * 60 + m;        // 21:00 → 0
+      }
+      if (h >= 0 && h < 9) {
+        return 3 * 60 + h * 60 + m;      // 0:00 → 3:00, 8:59 → <12ч
+      }
+      return null;
+    }
+    // День: 9–21. Ось 0–12ч: 0–12ч (9–21).
+    if (h < 9 || h >= 21) return null;
+    return (h - 9) * 60 + m;            // 9:00 → 0
+  };
+  for (const part of parts) {
+    const m = part.match(re);
+    if (!m) continue;
+    let h1 = Number(m[1]); let m1 = Number(m[2]);
+    let h2 = Number(m[3]); let m2 = Number(m[4]);
+    if (!Number.isFinite(h1) || !Number.isFinite(m1) || !Number.isFinite(h2) || !Number.isFinite(m2)) continue;
+    h1 = Math.min(Math.max(h1, 0), 23);
+    h2 = Math.min(Math.max(h2, 0), 23);
+    m1 = Math.min(Math.max(m1, 0), 59);
+    m2 = Math.min(Math.max(m2, 0), 59);
+    const start = mapToShiftMinute(h1, m1);
+    const end = mapToShiftMinute(h2, m2);
+    if (start == null || end == null) continue;
+    if (end <= start) continue;
+    out.push({ start, end, label: part });
+  }
+  return out;
+}
+
+/** Строит HTML-таймлайн простоев (красные капсулы по оси 0–12 часов смены). */
+function buildIdleTimelineHtml(raw, shiftFilter = 'day') {
+  const intervals = parseIdleIntervalsForTimeline(raw, shiftFilter);
+  if (!intervals.length) {
+    return escHtml(raw || '—');
+  }
+  const totalMinutes = 12 * 60;
+  const blocks = intervals.map(iv => {
+    const left = Math.max(0, Math.min(100, (iv.start / totalMinutes) * 100));
+    const width = Math.max(1, ((iv.end - iv.start) / totalMinutes) * 100);
+    return `<div class="he-idle-block" style="left:${left}%;width:${width}%;" title="${escHtml(iv.label)}"></div>`;
+  }).join('');
+  return `<div class="he-idles-timeline">${blocks}</div>`;
+}
+
+/**
+ * Рендерит таблицу «Сотрудник по часам». emplMap — для колонки «Компания». storageSupplement — опционально { storageByHour, totalStorageCount } для строки «Хранение».
+ * showIdles, idlesByEmployee — при showIdles добавляется колонка «Простои >15 мин».
+ */
+export function renderHourlyByEmployee(items, shiftFilter = 'day', emplMap = null, storageSupplement = null, showIdles = false, idlesByEmployee = {}) {
   const container = el('hourly-employee-table-wrap');
   if (!container) return;
 
   const { hours, rows } = calcHourlyByEmployee(items, shiftFilter);
 
-  if (!rows.length) {
-    container.innerHTML = '<div class="empty-row" style="padding:20px;text-align:center;color:var(--text-muted)">Нет данных</div>';
-    return;
-  }
-
   const getCompany = (name) => (emplMap && name ? (getCompanyByFio(emplMap, normalizeFio(name)) || '—') : '—');
   const withCompany = rows.map(r => ({ ...r, company: getCompany(r.name) }));
+  const weightByEmployee = storageSupplement?.weightByEmployee || {};
+  const totalWeightGrams = storageSupplement?.totalWeightGrams || 0;
   withCompany.sort((a, b) => {
     if (b.total !== a.total) return b.total - a.total;
     return (b.company || '').localeCompare(a.company || '', 'ru');
   });
 
+  if (!withCompany.length) {
+    container.innerHTML = '<div class="empty-row" style="padding:20px;text-align:center;color:var(--text-muted)">Нет данных</div>';
+    return;
+  }
+
   const hourLabel = (col) => {
     const start = (col + 23) % 24;
     return `${String(start).padStart(2,'0')}–${String(col).padStart(2,'0')}`;
   };
-  const thHours = hours.map(col => `<th class="he-th-hour" title="${hourLabel(col)}">${String(col).padStart(2,'0')}</th>`).join('');
+  // Когда включены «Простои >15 мин», убираем почасовые колонки и оставляем только Итог.
+  const thHours = showIdles ? '' : hours.map(col => `<th class="he-th-hour" title="${hourLabel(col)}">${String(col).padStart(2,'0')}</th>`).join('');
   const szCellClass = (v) => {
     if (v < 50) return 'he-sz-red';
     if (v <= 75) return 'he-sz-mid';
     return 'he-sz-white';
   };
+  /** Граммы → тонны (÷1_000_000), 2 знака: 246743 г → 0.25 т */
+  const formatTonnes = (grams) => (grams && grams > 0) ? (grams / 1e6).toFixed(2) : '';
+  const weightForName = (name) => {
+    if (!name || name === 'Хранение') return totalWeightGrams;
+    const a = weightByEmployee[name];
+    if (a != null) return a;
+    const parts = String(name).split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return weightByEmployee[parts.slice().reverse().join(' ')] ?? 0;
+    return 0;
+  };
+
+  // Ширина колонки «Простои» ≈ суммарная ширина всех часовых колонок (9–21).
+  const idleWidthPx = showIdles ? Math.max(1, (hours.length || 1) * 60) : 0;
+  const thIdles = showIdles
+    ? `<th class="he-th-idles" style="width:${idleWidthPx}px;min-width:${idleWidthPx}px;" title="Паузы между задачами более 15 мин">Простои &gt;15 мин</th>`
+    : '';
+  const getIdlesCell = (name) => {
+    if (!showIdles) return '';
+    const raw = idlesByEmployee[name] || '';
+    const timeline = buildIdleTimelineHtml(raw, shiftFilter);
+    return `<td class="he-td-idles" style="width:${idleWidthPx}px;min-width:${idleWidthPx}px;">${timeline}</td>`;
+  };
 
   const trRows = withCompany.map(r => {
-    const cells = hours.map(col => {
+    const cells = showIdles ? '' : hours.map(col => {
       const v = r.byHour[col] || 0;
       const cl = szCellClass(v);
       return `<td class="he-td-val ${cl}" title="${hourLabel(col)} — ${v} оп.">${v > 0 ? v : ''}</td>`;
     }).join('');
+    const weightG = weightForName(r.name);
+    const txCell = formatTonnes(weightG) ? `<td class="he-td-total" title="Вес собранный в хранении, т">${formatTonnes(weightG)}</td>` : '<td class="he-td-total"></td>';
     return `<tr>
       <td class="he-td-company">${escHtml(r.company)}</td>
       <td class="he-td-name">${escHtml(r.name)}</td>
       ${cells}
       <td class="he-td-total">${r.total}</td>
+      ${thIdles ? getIdlesCell(r.name) : ''}
+      ${txCell}
     </tr>`;
   }).join('');
 
@@ -556,6 +726,93 @@ export function renderHourlyByEmployee(items, shiftFilter = 'day', emplMap = nul
             <th class="he-th-name">Сотрудник</th>
             ${thHours}
             <th class="he-th-total">Итого</th>
+            ${thIdles}
+            <th class="he-th-total" title="Вес собранный в хранении, т">Тх</th>
+          </tr>
+        </thead>
+        <tbody>${trRows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+/**
+ * Рендер таблицы «Сотрудник по часам» из готовых данных (например из summary API).
+ * rows: { name, company, byHour, total }[]
+ * weightByEmployee, totalWeightGrams — для колонки Тх (вес в хранении, т).
+ * showIdles, idlesByEmployee — при showIdles добавляется колонка «Простои >15 мин» (по оси 12 часов смены).
+ */
+export function renderHourlyByEmployeeFromSummary(hours = [], rows = [], weightByEmployee = {}, totalWeightGrams = 0, showIdles = false, idlesByEmployee = {}, shiftFilter = 'day') {
+  const container = el('hourly-employee-table-wrap');
+  if (!container) return;
+  if (!rows.length) {
+    container.innerHTML = '<div class="empty-row" style="padding:20px;text-align:center;color:var(--text-muted)">Нет данных</div>';
+    return;
+  }
+  const sorted = [...rows].sort((a, b) => {
+    if (b.total !== a.total) return b.total - a.total;
+    return (b.company || '').localeCompare(a.company || '', 'ru');
+  });
+  const hourLabel = (col) => {
+    const start = (col + 23) % 24;
+    return `${String(start).padStart(2,'0')}–${String(col).padStart(2,'0')}`;
+  };
+  // При включённых простоях показываем только Итог и колонку простоя, без почасовой сетки.
+  const thHours = showIdles ? '' : hours.map(col => `<th class="he-th-hour" title="${hourLabel(col)}">${String(col).padStart(2,'0')}</th>`).join('');
+  const szCellClass = (v) => {
+    if (v < 50) return 'he-sz-red';
+    if (v <= 75) return 'he-sz-mid';
+    return 'he-sz-white';
+  };
+  /** Граммы → тонны (÷1_000_000), 2 знака: 246743 г → 0.25 т */
+  const formatTonnes = (grams) => (grams && grams > 0) ? (grams / 1e6).toFixed(2) : '';
+  const weightForName = (name) => {
+    if (!name || name === 'Хранение') return totalWeightGrams;
+    const a = weightByEmployee[name];
+    if (a != null) return a;
+    const parts = String(name).split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return weightByEmployee[parts.slice().reverse().join(' ')] ?? 0;
+    return 0;
+  };
+  // Ширина колонки «Простои» ≈ суммарная ширина всех часовых колонок (9–21).
+  const idleWidthPx = showIdles ? Math.max(1, (hours.length || 1) * 60) : 0;
+  const thIdles = showIdles
+    ? `<th class="he-th-idles" style="width:${idleWidthPx}px;min-width:${idleWidthPx}px;" title="Паузы между задачами более 15 мин">Простои &gt;15 мин</th>`
+    : '';
+  const getIdlesCell = (name) => {
+    if (!showIdles) return '';
+    const raw = idlesByEmployee[name] || '';
+    const timeline = buildIdleTimelineHtml(raw, shiftFilter);
+    return `<td class="he-td-idles" style="width:${idleWidthPx}px;min-width:${idleWidthPx}px;">${timeline}</td>`;
+  };
+  const trRows = sorted.map(r => {
+    const cells = showIdles ? '' : hours.map(col => {
+      const v = r.byHour && r.byHour[col] != null ? r.byHour[col] : 0;
+      const cl = szCellClass(v);
+      return `<td class="he-td-val ${cl}" title="${hourLabel(col)} — ${v} оп.">${v > 0 ? v : ''}</td>`;
+    }).join('');
+    const weightG = weightForName(r.name);
+    const txCell = formatTonnes(weightG) ? `<td class="he-td-total" title="Вес собранный в хранении, т">${formatTonnes(weightG)}</td>` : '<td class="he-td-total"></td>';
+    return `<tr>
+      <td class="he-td-company">${escHtml(r.company || '—')}</td>
+      <td class="he-td-name">${escHtml(r.name)}</td>
+      ${cells}
+      <td class="he-td-total">${r.total}</td>
+      ${thIdles ? getIdlesCell(r.name) : ''}
+      ${txCell}
+    </tr>`;
+  }).join('');
+  container.innerHTML = `
+    <div class="he-scroll-wrap">
+      <table class="he-table">
+        <thead>
+          <tr>
+            <th class="he-th-company">Компания</th>
+            <th class="he-th-name">Сотрудник</th>
+            ${thHours}
+            <th class="he-th-total">Итого</th>
+            ${thIdles}
+            <th class="he-th-total" title="Вес собранный в хранении, т">Тх</th>
           </tr>
         </thead>
         <tbody>${trRows}</tbody>

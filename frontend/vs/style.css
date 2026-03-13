@@ -280,6 +280,112 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
   box-shadow: 0 0 0 1px var(--error);
 }
 
+/* Тумблер «по часам» в заголовке сводки по компаниям */
+.company-summary-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.company-summary-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.company-summary-toggle-slider {
+  position: relative;
+  display: inline-block;
+  width: 32px;
+  height: 18px;
+  background: var(--border);
+  border-radius: 18px;
+  transition: background 0.2s;
+}
+.company-summary-toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 2px;
+  top: 2px;
+  background: var(--white);
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  transition: transform 0.2s;
+}
+.company-summary-toggle input:checked + .company-summary-toggle-slider {
+  background: var(--green);
+}
+.company-summary-toggle input:checked + .company-summary-toggle-slider::before {
+  transform: translateX(14px);
+}
+.company-summary-toggle-label {
+  white-space: nowrap;
+}
+
+/* Тумблер «Простои >15 мин» в заголовке «Сотрудники по часам» */
+.he-idles-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.he-idles-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.he-idles-toggle-slider {
+  position: relative;
+  display: inline-block;
+  width: 32px;
+  height: 18px;
+  background: var(--border);
+  border-radius: 18px;
+  transition: background 0.2s;
+}
+.he-idles-toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 2px;
+  top: 2px;
+  background: var(--white);
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  transition: transform 0.2s;
+}
+.he-idles-toggle input:checked + .he-idles-toggle-slider {
+  background: var(--green);
+}
+.he-idles-toggle input:checked + .he-idles-toggle-slider::before {
+  transform: translateX(14px);
+}
+.he-idles-toggle-label {
+  white-space: nowrap;
+}
+
+.card-header-hourly .card-header-hourly-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.card-header-hourly .he-idles-toggle {
+  flex-shrink: 0;
+}
+
 .company-summary-table {
   width: 100%; border-collapse: collapse; font-size: 13px;
 }
@@ -536,15 +642,35 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 
 .setting-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 16px 20px;
+}
+
+.setting-row-stack {
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
+  padding: 0 20px 8px;
+}
+.setting-row-stack .setting-info {
+  flex: none;
+  width: 100%;
+  min-width: 0;
+}
+.setting-row-stack .setting-info .setting-desc {
+  display: block;
+  max-width: 100%;
+  word-wrap: break-word;
+}
+.setting-control-full {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .setting-info { flex: 1; min-width: 0; }
 .setting-label { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 3px; }
-.setting-desc  { font-size: 12px; color: var(--text-muted); }
+.setting-desc  { font-size: 12px; color: var(--text-muted); line-height: 1.45; }
 
 .setting-control { flex-shrink: 0; }
 
@@ -553,11 +679,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
   flex-direction: column;
   gap: 10px;
   width: 100%;
-  max-width: 560px;
+  max-width: 720px;
 }
 .telegram-chat-row {
   display: grid;
-  grid-template-columns: 1fr 120px 120px auto;
+  grid-template-columns: auto 1fr 90px 90px minmax(120px, 1fr) auto;
   gap: 8px;
   align-items: center;
   padding: 8px 10px;
@@ -565,9 +691,13 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
   border-radius: 8px;
   border: 1px solid var(--border);
 }
+.telegram-chat-row .tg-enabled-wrap { white-space: nowrap; }
+.telegram-chat-row .tg-enabled-wrap input { margin-right: 4px; }
 .telegram-chat-row .tg-chat-id { min-width: 0; }
-.telegram-chat-row .tg-thread-cons { width: 100px; }
-.telegram-chat-row .tg-thread-stats { width: 100px; }
+.telegram-chat-row .tg-thread-cons,
+.telegram-chat-row .tg-thread-stats { width: 100%; min-width: 0; }
+.telegram-chat-row .tg-companies { min-width: 0; min-height: 72px; padding: 4px 6px; font-size: 12px; }
+.telegram-chat-row .tg-companies option { padding: 2px 4px; }
 .telegram-chat-row .btn-icon-del { flex-shrink: 0; }
 
 .setting-divider { border: none; border-top: 1px solid var(--border); margin: 0; }
@@ -915,11 +1045,18 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 }
 
 .he-th-name,
-.he-td-company { color: var(--text-muted); font-size: 0.9em; min-width: 90px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.he-td-company {
+  color: var(--text-muted);
+  font-size: 0.9em;
+  min-width: 80px;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .he-td-name {
   text-align: left;
-  min-width: 160px;
-  max-width: 220px;
+  min-width: 140px;
+  max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
   position: sticky;
@@ -949,6 +1086,30 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
   font-weight: 700;
   background: #ffffff;
   min-width: 52px;
+}
+
+.he-th-idles,
+.he-td-idles {
+  font-size: 11px;
+  white-space: nowrap;
+  text-align: center;
+  padding: 6px 8px;
+}
+
+/* Тайм-линия простоев (Простои >15 мин) */
+.he-idles-timeline {
+  position: relative;
+  height: 18px;
+  border-radius: 9px;
+  background: #f3f4f6;
+  overflow: hidden;
+}
+.he-idle-block {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: #f87171;
+  border-radius: 999px;
 }
 
 /* Тепловая карта и СЗ по часам: цифры чёрные */
