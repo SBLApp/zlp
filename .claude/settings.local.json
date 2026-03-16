@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs wc:*)",
+      "Bash(powershell -Command \"Get-Content ''b:\\\\рабочий стол\\\\zlp-0.2\\\\backend\\\\data\\\\2026-03-15\\\\09.json'' -Raw | ConvertFrom-Json | Select-Object -ExpandProperty items | Select-Object -First 10 | Select-Object operationType, productName, quantity | ConvertTo-Json\")",
+      "Bash(powershell -Command \"$data = Get-Content ''b:\\\\рабочий стол\\\\zlp-0.2\\\\backend\\\\data\\\\2026-03-15\\\\11.json'' -Raw | ConvertFrom-Json; $data.items | Select-Object -ExpandProperty cell | Sort-Object -Unique | Select-Object -First 60\")",
+      "Bash(node -e \":*)"
+    ]
+  }
+}
