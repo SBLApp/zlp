@@ -1,0 +1,61 @@
+{
+  "token": "eyJraWQiOiI2MTg2OTEiLCJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MjE5MDY5ODU2IiwiaWF0IjoxNzczNjg0MTY0LCJleHAiOjE3NzM2ODQ0NjQsImF1ZCI6Imh0dHBzOi8vc2Ftb2thdC5ydSIsInNjb3BlIjpbIndtc19jaGllZl9zdG9ja21hbiJdLCJjbGllbnRfaWQiOiJXTVMiLCJkZXZpY2VfaWQiOm51bGwsInVzZXIiOnsidXNlcklkIjoiYTE1NzRmMGYtMTkyYi00N2QwLTgyNDYtOWJkYjNhYTllZTM5IiwidXNlclR5cGUiOiIifSwic3ViIjoiYTE1NzRmMGYtMTkyYi00N2QwLTgyNDYtOWJkYjNhYTllZTM5In0.Fav2NxL7DiCLX_89XXumKQPIO_yPAG1RED7q5MttsPvjESP9OalvbfT3coCuX54juxE4mZLJuIelu1uQERoPccFLrcnEISPCkEpp6sJMrEkA1MglEKsjkjm7JCA7km11GTBjjG5_ezsl_rl_KtxJVnCnwkKNQlV4Swo26ECSYfk",
+  "refreshToken": "83bebb8c121dcd72792fc5248409ad68d07241d2aaa3b49d7a5c760158c82463",
+  "intervalMinutes": 1,
+  "pageSize": 500,
+  "apiUrl": "https://api.samokat.ru/wmsops-wwh/stocks/changes/search",
+  "useVpn": false,
+  "cookie": "spid=1770724072324_72378534b4403924ebea42a9d7833def_mcutbxnf9tjr0bth",
+  "telegramBotToken": "8467241470:AAHgY7NHZM9MDLu7we1xqqISOIxAH6jINGU",
+  "telegramChatId": "-1002388325048",
+  "telegramThreadId": "19744",
+  "telegramThreadIdIdles": "",
+  "telegramChats": [
+    {
+      "chatId": "613051042",
+      "threadIdConsolidation": "",
+      "threadIdStats": "",
+      "threadIdIdles": "",
+      "label": "",
+      "enabled": true,
+      "companiesFilter": [
+        "2K",
+        "Градус",
+        "Мувинг",
+        "ЭСК"
+      ]
+    },
+    {
+      "chatId": "544569923",
+      "threadIdConsolidation": "",
+      "threadIdStats": "",
+      "threadIdIdles": "",
+      "label": "",
+      "enabled": false,
+      "companiesFilter": [
+        "2K",
+        "Градус",
+        "Мувинг",
+        "Штат 2",
+        "ЭСК"
+      ]
+    },
+    {
+      "chatId": "833576863",
+      "threadIdConsolidation": "",
+      "threadIdStats": "",
+      "threadIdIdles": "",
+      "label": "",
+      "enabled": false,
+      "companiesFilter": [
+        "2K",
+        "Градус",
+        "Мувинг",
+        "Штат 2",
+        "ЭСК"
+      ]
+    }
+  ],
+  "telegramTimezone": "Europe/Moscow",
+  "connectionMode": "browser"
+}
