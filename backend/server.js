@@ -1517,6 +1517,111 @@ app.post('/api/consolidation/telegram/send', async (req, res) => {
   }
 });
 
+// GET /api/stats/monthly-company — сводка по компаниям за месяц
+app.get('/api/stats/monthly-company', vsSessionRequired, (req, res) => {
+  try {
+    const year  = parseInt(req.query.year,  10);
+    const month = parseInt(req.query.month, 10); // 1–12
+    const shift = req.query.shift || null;        // 'day'|'night'|null
+    if (!year || !month || month < 1 || month > 12) {
+      return res.status(400).json({ error: 'Нужны year и month (1–12)' });
+    }
+    const emplMap  = getEmplMapFioToCompany();
+    const getComp  = fio => getCompanyByFio(emplMap, fio) || '—';
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    // Парсинг веса из названия товара (реплика из stats.js)
+    function parseWeightGramsFromName(name) {
+      const s = String(name || '').replace(/\u00a0|\u202f/g, ' ').trim();
+      if (!s) return 0;
+      const parseN = v => { const n = Number(String(v||'').replace(',','.')); return Number.isFinite(n) ? n : 0; };
+      const fromUnit = (val, unit) => {
+        const v = parseN(val); if (!v) return 0;
+        const u = String(unit||'').toLowerCase();
+        if (u==='кг'||u==='kg') return v*1000;
+        if (u==='г'||u==='g') return v;
+        if (u==='л'||u==='l') return v*1000;
+        if (u==='мл'||u==='ml') return v;
+        return 0;
+      };
+      const combo = s.match(/(\d+(?:[.,]\d+)?)\s*[xх×]\s*(\d+(?:[.,]\d+)?)\s*(кг|г|л|мл|kg|g|l|ml)/i);
+      if (combo) return parseN(combo[1]) * fromUnit(combo[2], combo[3]);
+      const simple = s.match(/(\d+(?:[.,]\d+)?)\s*(кг|г|л|мл|kg|g|l|ml)/i);
+      if (simple) return fromUnit(simple[1], simple[2]);
+      return 0;
+    }
+    function resolveWeightGrams(article, name) {
+      if (article) { const w = productWeights.getWeightGrams(String(article).trim()); if (w > 0) return w; }
+      return parseWeightGramsFromName(name);
+    }
+
+    // company -> { totalTasks, storageOps, kdkOps, weightStorageGrams, weightKdkGrams, employees: Set, workDays }
+    const monthly = new Map();
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      const items = storage.getDateItems(dateStr, { shift: shift || undefined });
+      if (!items.length) continue;
+
+      // Дедупликация задач за день по каждой компании
+      const dayByCompany = new Map();
+      for (const item of items) {
+        const op = (item.operationType || '').toUpperCase();
+        const isKdk     = op === 'PICK_BY_LINE';
+        const isStorage = op === 'PIECE_SELECTION_PICKING';
+        if (!isKdk && !isStorage) continue;
+
+        const company = getComp(item.executor);
+        const taskKey = isKdk
+          ? `task|${item.executor||''}|${item.cell||''}|${item.nomenclatureCode||item.productName||''}`
+          : `id|${item.id||''}`;
+
+        if (!dayByCompany.has(company)) dayByCompany.set(company, { taskKeys: new Set(), storageOps: 0, kdkOps: 0, weightStorageGrams: 0, weightKdkGrams: 0, employees: new Set() });
+        const dc = dayByCompany.get(company);
+        if (!dc.taskKeys.has(taskKey)) {
+          dc.taskKeys.add(taskKey);
+          if (isKdk) dc.kdkOps++; else dc.storageOps++;
+        }
+        // Вес считаем по каждой записи
+        const grams = resolveWeightGrams(String(item.nomenclatureCode || '').trim(), item.productName || '') * Math.max(1, Number(item.quantity) || 1);
+        if (grams > 0) { if (isKdk) dc.weightKdkGrams += grams; else dc.weightStorageGrams += grams; }
+        dc.employees.add(normalizeFioForMatch(item.executor));
+      }
+
+      for (const [company, dc] of dayByCompany) {
+        if (!monthly.has(company)) monthly.set(company, { totalTasks: 0, storageOps: 0, kdkOps: 0, weightStorageGrams: 0, weightKdkGrams: 0, employees: new Set(), workDays: 0 });
+        const r = monthly.get(company);
+        r.totalTasks         += dc.taskKeys.size;
+        r.storageOps         += dc.storageOps;
+        r.kdkOps             += dc.kdkOps;
+        r.weightStorageGrams += dc.weightStorageGrams;
+        r.weightKdkGrams     += dc.weightKdkGrams;
+        dc.employees.forEach(e => r.employees.add(e));
+        r.workDays++;
+      }
+    }
+
+    const companies = [...monthly.entries()]
+      .map(([name, r]) => ({
+        name,
+        totalTasks:         r.totalTasks,
+        storageOps:         r.storageOps,
+        kdkOps:             r.kdkOps,
+        weightStorageGrams: r.weightStorageGrams,
+        weightKdkGrams:     r.weightKdkGrams,
+        weightTotalGrams:   r.weightStorageGrams + r.weightKdkGrams,
+        employees:          r.employees.size,
+        workDays:           r.workDays,
+      }))
+      .sort((a, b) => b.totalTasks - a.totalTasks);
+
+    res.json({ year, month, daysInMonth, companies });
+  } catch (err) {
+    console.error('GET /api/stats/monthly-company', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/stats/send-hourly-telegram — отправить PNG по компаниям как файлы (документы) в Telegram
 // Менеджер (с сессией): отправка в привязанный чат. Иначе — в чаты из настроек.
 app.post('/api/stats/send-hourly-telegram', vsSessionOptional, uploadMemory.any(50), async (req, res) => {

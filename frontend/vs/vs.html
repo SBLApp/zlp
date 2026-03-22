@@ -216,6 +216,27 @@
           <div class="empty-row" style="padding:16px;text-align:center;color:var(--text-muted)">Нет данных</div>
         </div>
       </div>
+      <!-- Сводка по компаниям за месяц -->
+      <div class="card company-summary-card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <div>
+            <span>Сводка по компаниям за месяц</span>
+            <span class="card-header-sub">Итог СЗ, сотрудников, рабочих дней</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input type="month" id="monthly-company-month" class="select-control" style="font-size:13px;">
+            <select id="monthly-company-shift" class="select-control" style="font-size:13px;">
+              <option value="">Все смены</option>
+              <option value="day">День (9–21)</option>
+              <option value="night">Ночь (21–9)</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" id="monthly-company-load-btn">Загрузить</button>
+          </div>
+        </div>
+        <div id="monthly-company-table-wrap">
+          <div class="empty-row" style="padding:16px;text-align:center;color:var(--text-muted)">Выберите месяц и нажмите «Загрузить»</div>
+        </div>
+      </div>
       <div class="card" style="margin-bottom:20px;">
         <div class="card-header">
           <span>Пики по часам</span>

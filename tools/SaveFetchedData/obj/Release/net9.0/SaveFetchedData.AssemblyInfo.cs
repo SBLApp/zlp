@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SaveFetchedData")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d3c846f1be15ce7a22328d4e93cc469d5f3a912b")]
 [assembly: System.Reflection.AssemblyProductAttribute("SaveFetchedData")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SaveFetchedData")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

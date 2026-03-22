@@ -149,6 +149,14 @@ export async function getDateItems(date, { fromHour, toHour, shift } = {}) {
   return r.json();
 }
 
+/** Сводка по компаниям за месяц. */
+export async function getMonthlyCompany(year, month, shift) {
+  const params = new URLSearchParams({ year, month });
+  if (shift) params.set('shift', shift);
+  const r = await fetch(`${API}/stats/monthly-company?${params}`);
+  return r.json();
+}
+
 /** Быстрая сводка за дату и смену (цифры без полного списка операций). */
 export async function getDateSummary(date, { shift, idleThresholdMinutes } = {}) {
   const params = new URLSearchParams();

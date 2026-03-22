@@ -9,7 +9,7 @@ import {
   calcStats, renderStats, renderExecutorTable, renderHourlyChart, renderHourlyByEmployee,
   renderHourlyByEmployeeFromSummary,
   getHourlyByEmployeeGroupedByCompany, getHourlyByEmployeeGroupedByCompanyFromSummary, buildHourlyTableHtmlForCompany, buildHourlyTableHtmlFullList, buildWeightByZoneTableHtml,
-  getCompanySummaryTableData, renderCompanySummaryTable,
+  getCompanySummaryTableData, renderCompanySummaryTable, renderMonthlyCompanySummary,
   buildStorageRowForCols,
   calcIdlesByEmployee,
   calcIdleTotalsByEmployee,
@@ -1840,6 +1840,27 @@ function setupEventListeners() {
 
   // Сводка по компаниям: тумблер «по часам» — перерисовка таблицы без перезагрузки данных.
   el('company-summary-show-hours')?.addEventListener('change', () => renderAll());
+
+  // Сводка по компаниям за месяц
+  el('monthly-company-load-btn')?.addEventListener('click', async () => {
+    const monthInput = el('monthly-company-month')?.value; // 'YYYY-MM'
+    const shift = el('monthly-company-shift')?.value || '';
+    const wrap = el('monthly-company-table-wrap');
+    if (!monthInput) { if (wrap) wrap.innerHTML = '<div class="empty-row" style="padding:12px;color:var(--text-muted)">Выберите месяц</div>'; return; }
+    const [year, month] = monthInput.split('-').map(Number);
+    if (wrap) wrap.innerHTML = '<div class="empty-row" style="padding:16px;text-align:center;color:var(--text-muted)">Загрузка...</div>';
+    try {
+      const data = await api.getMonthlyCompany(year, month, shift || null);
+      renderMonthlyCompanySummary(data);
+    } catch (err) {
+      if (wrap) wrap.innerHTML = `<div class="empty-row" style="padding:12px;color:var(--danger,#dc2626)">Ошибка: ${err.message}</div>`;
+    }
+  });
+
+  // Подставляем текущий месяц по умолчанию
+  const _nowM = new Date();
+  const _monthDefault = `${_nowM.getFullYear()}-${String(_nowM.getMonth() + 1).padStart(2, '0')}`;
+  if (el('monthly-company-month')) el('monthly-company-month').value = _monthDefault;
 
   // Сотрудники по часам: тумблер «Простои >15 мин» — показать колонку с паузами между задачами.
   el('idle-threshold-minutes')?.addEventListener('change', () => {

@@ -27,3 +27,4 @@ B:\рабочий стол\zlp-main\tools\SaveFetchedData\obj\Release\net9.0\ref
 B:\рабочий стол\zlp-main\tools\SaveFetchedData\obj\Release\net9.0\SaveFetchedData.pdb
 B:\рабочий стол\zlp-main\tools\SaveFetchedData\obj\Release\net9.0\SaveFetchedData.genruntimeconfig.cache
 B:\рабочий стол\zlp-main\tools\SaveFetchedData\obj\Release\net9.0\ref\SaveFetchedData.dll
+B:\рабочий стол\zlp-main\tools\SaveFetchedData\obj\Release\net9.0\SaveFetchedData.sourcelink.json

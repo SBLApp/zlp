@@ -730,6 +730,98 @@ export function renderCompanySummaryTable(rows, hoursDisplay = [], showHours = t
   `;
 }
 
+/**
+ * Рендер сводки по компаниям за месяц.
+ * @param {{ year, month, daysInMonth, companies: Array }} data
+ */
+export function renderMonthlyCompanySummary(data) {
+  const container = el('monthly-company-table-wrap');
+  if (!container) return;
+
+  if (!data || !data.companies || !data.companies.length) {
+    container.innerHTML = '<div class="empty-row" style="padding:16px;text-align:center;color:var(--text-muted)">Нет данных за выбранный период</div>';
+    return;
+  }
+
+  const MONTH_NAMES = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  const monthLabel = `${MONTH_NAMES[data.month - 1]} ${data.year}`;
+
+  const totals = data.companies.reduce((acc, c) => {
+    acc.totalTasks += c.totalTasks;
+    acc.storageOps += c.storageOps;
+    acc.kdkOps     += c.kdkOps;
+    acc.weightTotalGrams   += c.weightTotalGrams   || 0;
+    acc.weightStorageGrams += c.weightStorageGrams || 0;
+    acc.weightKdkGrams     += c.weightKdkGrams     || 0;
+    return acc;
+  }, { totalTasks: 0, storageOps: 0, kdkOps: 0, weightTotalGrams: 0, weightStorageGrams: 0, weightKdkGrams: 0 });
+
+  const rows = data.companies.map(c => {
+    const szd   = c.workDays > 0 && c.employees > 0 ? Math.round(c.totalTasks / c.employees / c.workDays) : 0;
+    const vezd  = c.workDays > 0 && c.employees > 0 ? Math.round(c.weightTotalGrams / c.employees / c.workDays) : 0;
+    return `<tr>
+      <td class="cs-td-company">${escHtml(c.name)}</td>
+      <td class="cs-td-num">${c.employees}</td>
+      <td class="cs-td-num">${c.workDays}</td>
+      <td class="cs-td-num">${szd}</td>
+      <td class="cs-td-num">${formatWeight(vezd)}</td>
+      <td class="cs-td-num">${c.totalTasks.toLocaleString('ru-RU')}</td>
+      <td class="cs-td-num">${formatWeight(c.weightTotalGrams)}</td>
+      <td class="cs-td-num">${c.storageOps.toLocaleString('ru-RU')}</td>
+      <td class="cs-td-num">${c.kdkOps.toLocaleString('ru-RU')}</td>
+      <td class="cs-td-num">${formatWeight(c.weightStorageGrams)}</td>
+      <td class="cs-td-num">${formatWeight(c.weightKdkGrams)}</td>
+    </tr>`;
+  }).join('');
+
+
+  container.innerHTML = `
+    <div style="padding:8px 12px 4px;font-size:12px;color:var(--text-muted)">${monthLabel} · ${data.daysInMonth} дней</div>
+    <table class="company-summary-table">
+      <thead>
+        <tr>
+          <th class="cs-th-company">Компания</th>
+          <th class="cs-th-num">Сотрудников</th>
+          <th class="cs-th-num">Раб. дней</th>
+          <th class="cs-th-num" title="Среднее задач в день на сотрудника">СЗ/Д</th>
+          <th class="cs-th-num" title="Средний вес в день на сотрудника">ВЕС/Д</th>
+          <th class="cs-th-num">Итог</th>
+          <th class="cs-th-num">Вес итог</th>
+          <th class="cs-th-num" title="СЗ в хранении (PIECE_SELECTION_PICKING)">СЗ хранение</th>
+          <th class="cs-th-num" title="СЗ в КДК (PICK_BY_LINE)">СЗ КДК</th>
+          <th class="cs-th-num">Вес хранение</th>
+          <th class="cs-th-num">Вес КДК</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+        <tr style="font-weight:600;border-top:2px solid var(--border)">
+          <td class="cs-td-company">ИТОГО</td>
+          <td class="cs-td-num"></td>
+          <td class="cs-td-num"></td>
+          <td class="cs-td-num"></td>
+          <td class="cs-td-num"></td>
+          <td class="cs-td-num">${totals.totalTasks.toLocaleString('ru-RU')}</td>
+          <td class="cs-td-num">${formatWeight(totals.weightTotalGrams)}</td>
+          <td class="cs-td-num">${totals.storageOps.toLocaleString('ru-RU')}</td>
+          <td class="cs-td-num">${totals.kdkOps.toLocaleString('ru-RU')}</td>
+          <td class="cs-td-num">${formatWeight(totals.weightStorageGrams)}</td>
+          <td class="cs-td-num">${formatWeight(totals.weightKdkGrams)}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="company-summary-formulas">
+      <div class="cs-formula-row">
+        <span class="cs-formula-label">СЗ/Д — среднее задач в день на сотрудника:</span>
+        <span class="cs-formula-text">Итог ÷ Сотрудников ÷ Раб. дней</span>
+      </div>
+      <div class="cs-formula-row">
+        <span class="cs-formula-label">ВЕС/Д — средний вес в день на сотрудника:</span>
+        <span class="cs-formula-text">Вес итог ÷ Сотрудников ÷ Раб. дней</span>
+      </div>
+    </div>`;
+}
+
 /** Легенда цветовой схемы для таблицы по часам. */
 function buildHeLegendHtml(mode) {
   if (mode === 'sz') {
