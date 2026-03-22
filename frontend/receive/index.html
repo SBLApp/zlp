@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Отгрузка / Приёмка РК</title>
+  <link rel="stylesheet" href="/receive/style.css">
+</head>
+<body>
+
+  <!-- Экран: ввод имени -->
+  <div id="screen-name" class="screen" style="display:none">
+    <div class="name-box">
+      <div class="name-logo">📦</div>
+      <h1 class="name-title">РК — Склад</h1>
+      <p class="name-hint">Введите свою фамилию и инициалы — сохранится на устройстве</p>
+      <div class="field">
+        <label>Фамилия и инициалы</label>
+        <input id="name-input" type="text" class="input" placeholder="Иванов И.И." autocomplete="name">
+      </div>
+      <div id="name-error" class="error-msg" style="display:none"></div>
+      <button id="name-btn" class="btn-primary">Продолжить</button>
+    </div>
+  </div>
+
+  <!-- Основной экран -->
+  <div id="screen-main" class="screen" style="display:none">
+    <header class="header">
+      <button id="back-btn" class="header-back" style="display:none">←</button>
+      <span id="header-title" class="header-title">📦 РК — Склад</span>
+      <button id="change-name-btn" class="header-name-btn">
+        <span id="header-name"></span> ✎
+      </button>
+    </header>
+
+    <div class="container">
+
+      <!-- Шаг: тип операции -->
+      <div id="step-type" class="step">
+        <div class="type-cards">
+          <button class="type-card" data-type="ship">
+            <div class="type-card-icon">🚛</div>
+            <div class="type-card-label">Отгрузка</div>
+            <div class="type-card-desc">Маршрут уходит со склада</div>
+          </button>
+          <button class="type-card" data-type="receive">
+            <div class="type-card-icon">📥</div>
+            <div class="type-card-label">Приёмка</div>
+            <div class="type-card-desc">Возврат РК с маршрута</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Шаг: поиск -->
+      <div id="step-search" class="step" style="display:none">
+        <div class="search-row">
+          <input id="search-input" type="text" class="input" placeholder="Водитель, маршрут, адрес ЦФЗ...">
+        </div>
+        <div id="search-results" class="results"></div>
+      </div>
+
+      <!-- Шаг: ввод данных -->
+      <div id="step-data" class="step" style="display:none">
+        <div id="route-info" class="route-info-box"></div>
+
+        <div class="field">
+          <label>Ворота</label>
+          <input id="gate-input" type="text" class="input" placeholder="Номер ворот" inputmode="numeric">
+        </div>
+
+        <div class="field-label">Количество РК по ЦФЗ</div>
+        <div id="cfz-list" class="cfz-list"></div>
+
+        <div class="photos-section">
+          <div class="field-label">Фотографии</div>
+          <div id="photos-preview" class="photos-preview"></div>
+          <button id="add-photo-btn" class="btn-photo" type="button">+ Добавить фото</button>
+          <input id="photo-input" type="file" accept="image/*" multiple style="display:none">
+        </div>
+
+        <div id="submit-status" style="display:none"></div>
+        <button id="submit-btn" class="btn-primary btn-save">Сохранить</button>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="/receive/app.js"></script>
+</body>
+</html>

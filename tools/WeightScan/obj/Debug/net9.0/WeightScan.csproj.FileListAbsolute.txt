@@ -1,0 +1,14 @@
+B:\рабочий стол\zlp-0.2\tools\WeightScan\bin\Debug\net9.0\WeightScan.exe
+B:\рабочий стол\zlp-0.2\tools\WeightScan\bin\Debug\net9.0\WeightScan.deps.json
+B:\рабочий стол\zlp-0.2\tools\WeightScan\bin\Debug\net9.0\WeightScan.runtimeconfig.json
+B:\рабочий стол\zlp-0.2\tools\WeightScan\bin\Debug\net9.0\WeightScan.dll
+B:\рабочий стол\zlp-0.2\tools\WeightScan\bin\Debug\net9.0\WeightScan.pdb
+B:\рабочий стол\zlp-0.2\tools\WeightScan\obj\Debug\net9.0\WeightScan.GeneratedMSBuildEditorConfig.editorconfig
+B:\рабочий стол\zlp-0.2\tools\WeightScan\obj\Debug\net9.0\WeightScan.AssemblyInfoInputs.cache
+B:\рабочий стол\zlp-0.2\tools\WeightScan\obj\Debug\net9.0\WeightScan.AssemblyInfo.cs
+B:\рабочий стол\zlp-0.2\tools\WeightScan\obj\Debug\net9.0\WeightScan.csproj.CoreCompileInputs.cache
+B:\рабочий стол\zlp-0.2\tools\WeightScan\obj\Debug\net9.0\WeightScan.dll
+B:\рабочий стол\zlp-0.2\tools\WeightScan\obj\Debug\net9.0\refint\WeightScan.dll
+B:\рабочий стол\zlp-0.2\tools\WeightScan\obj\Debug\net9.0\WeightScan.pdb
+B:\рабочий стол\zlp-0.2\tools\WeightScan\obj\Debug\net9.0\WeightScan.genruntimeconfig.cache
+B:\рабочий стол\zlp-0.2\tools\WeightScan\obj\Debug\net9.0\ref\WeightScan.dll

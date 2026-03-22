@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs wc:*)",
+      "Bash(powershell -Command \"Get-Content ''b:\\\\рабочий стол\\\\zlp-0.2\\\\backend\\\\data\\\\2026-03-15\\\\09.json'' -Raw | ConvertFrom-Json | Select-Object -ExpandProperty items | Select-Object -First 10 | Select-Object operationType, productName, quantity | ConvertTo-Json\")",
+      "Bash(powershell -Command \"$data = Get-Content ''b:\\\\рабочий стол\\\\zlp-0.2\\\\backend\\\\data\\\\2026-03-15\\\\11.json'' -Raw | ConvertFrom-Json; $data.items | Select-Object -ExpandProperty cell | Sort-Object -Unique | Select-Object -First 60\")",
+      "Bash(node -e \":*)",
+      "Bash(npm install:*)",
+      "Bash(\"b:\\\\рабочий стол\\\\zlp-0.2\\\\backend\\\\data\\\\shipments.json\")",
+      "Bash(node -e \"require\\(''./backend/shipments-storage''\\); console.log\\(''OK''\\)\")",
+      "Bash(node -e \"const d=require\\(''''fs''''\\).readFileSync\\(''''/dev/stdin'''',''''utf8''''\\); const j=JSON.parse\\(d\\); Object.entries\\(j\\).forEach\\(\\([k,v]\\)=>console.log\\(k,''''role:'''',v.role,''''modules:'''',JSON.stringify\\(v.modules\\)\\)\\)\")",
+      "Bash(node -e \"const xl = require\\(''xlsx''\\); const wb = xl.readFile\\(''b:/рабочий стол/zlp-0.2/backend/reports/Отчет по РК СПБ-3 НОВЫЙ.xlsx''\\); console.log\\(JSON.stringify\\(wb.SheetNames\\)\\); const ws = wb.Sheets[wb.SheetNames[0]]; console.log\\(JSON.stringify\\(xl.utils.sheet_to_json\\(ws, {header:1, defval:''''}\\)\\).slice\\(0,2000\\)\\)\")",
+      "Bash(node -e \"require\\(''''xlsx''''\\); console.log\\(''''ok''''\\)\")",
+      "Bash(node -e \"require\\(''exceljs''\\); console.log\\(''ok''\\)\")",
+      "Bash(node -e \"require\\(''xlsx-style''\\); console.log\\(''ok''\\)\")"
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+node_modules/
+backend/uploads/
+backend/data/
+owms.log
+*.log
+*.zip
+*.7z
+output.7z
+asas.7z
