@@ -1,6 +1,6 @@
 {
-  "token": "eyJraWQiOiI2MTg2OTEiLCJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MjQ2MjE2NTIxIiwiaWF0IjoxNzc0MjIxMTk2LCJleHAiOjE3NzQyMjE0OTYsImF1ZCI6Imh0dHBzOi8vc2Ftb2thdC5ydSIsInNjb3BlIjpbIndtc19jaGllZl9zdG9ja21hbiJdLCJjbGllbnRfaWQiOiJXTVMiLCJkZXZpY2VfaWQiOm51bGwsInVzZXIiOnsidXNlcklkIjoiYTE1NzRmMGYtMTkyYi00N2QwLTgyNDYtOWJkYjNhYTllZTM5IiwidXNlclR5cGUiOiIifSwic3ViIjoiYTE1NzRmMGYtMTkyYi00N2QwLTgyNDYtOWJkYjNhYTllZTM5In0.GBcTk1kAe7ycMYcw8PuRXiJ2IseWpAr07SZoKwZxSB7sK1mWhhRShZEq1K6jRDSs5gruHs6Jb_5OyLEePdKCRqPpqwOzGgedHuqnquKSv0kZyEalY4AvXfv_wzNW8hP-9cWFZoU3L-zWGp0FcqQ_P8_xJtoW0obNf7qvOn6FRNc",
-  "refreshToken": "8e1cde71890b639a8ab0d7f2fb1b0f11cd5c96025e99fb52d99fd1490b6cfc1e",
+  "token": "eyJraWQiOiI2MTg2OTEiLCJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MjQ5MTQ5NDMwIiwiaWF0IjoxNzc0Mjc4MDEzLCJleHAiOjE3NzQyNzgzMTMsImF1ZCI6Imh0dHBzOi8vc2Ftb2thdC5ydSIsInNjb3BlIjpbIndtc19jaGllZl9zdG9ja21hbiJdLCJjbGllbnRfaWQiOiJXTVMiLCJkZXZpY2VfaWQiOm51bGwsInVzZXIiOnsidXNlcklkIjoiYTE1NzRmMGYtMTkyYi00N2QwLTgyNDYtOWJkYjNhYTllZTM5IiwidXNlclR5cGUiOiIifSwic3ViIjoiYTE1NzRmMGYtMTkyYi00N2QwLTgyNDYtOWJkYjNhYTllZTM5In0.C-MEd_AokmgkoBW6Zn4t0VF_mBbT-nIo6v4aOKmBkuK0BxkfJEVuVN8Q9cnEnTUHiE5Se2mIk-cgDD3rjrHHoilrBwhCJ3Ykft5j97FT9ppA8i4-AFmTp_BFsNQjOhniafGaCJ3Rgmdo3vmp22xKHFSCRiQZyRYEmzvdFsbyE8E",
+  "refreshToken": "36b6e2010948427568e35c929e97d2436652b069bbbc87be7d1d0ed2dd9a26d9",
   "intervalMinutes": 1,
   "pageSize": 500,
   "apiUrl": "https://api.samokat.ru/wmsops-wwh/stocks/changes/search",
@@ -61,13 +61,22 @@
       "threadIdStats": "14724",
       "threadIdIdles": "14724",
       "label": "",
-      "enabled": true,
+      "enabled": false,
       "companiesFilter": [
         "2K",
         "Градус",
         "Мувинг",
         "ЭСК"
       ]
+    },
+    {
+      "chatId": "-1003782628756",
+      "threadIdConsolidation": "276",
+      "threadIdStats": "12",
+      "threadIdIdles": "1162",
+      "label": "",
+      "enabled": true,
+      "companiesFilter": []
     }
   ],
   "telegramTimezone": "Europe/Moscow",

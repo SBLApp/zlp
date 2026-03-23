@@ -542,18 +542,18 @@ function routeRows(r) {
     </td>
     <td>${fmtDate(r.date)}</td>
     <td class="sh-td-bold">${escHtml(r.routeNumber || '—')}</td>
-    <td>${escHtml(r.driver?.name || '—')}</td>
-    <td class="sh-td-muted">${escHtml(r.vehicle ? `${r.vehicle.model} ${r.vehicle.number}` : '—')}</td>
+    <td class="sh-td-trunc" title="${escHtml(r.driver?.name || '')}">${escHtml(r.driver?.name || '—')}</td>
+    <td class="sh-td-muted sh-td-trunc" title="${escHtml(r.vehicle ? `${r.vehicle.model} ${r.vehicle.number}` : '')}">${escHtml(r.vehicle ? `${r.vehicle.model} ${r.vehicle.number}` : '—')}</td>
     <td class="sh-td-muted">${cfzList.length ? `${cfzList.length} ` : '—'}</td>
     <td class="sh-td-num">${r.shippedRK != null ? r.shippedRK : '<span class="sh-na">—</span>'}</td>
-    <td class="sh-td-muted">${escHtml(r.shipment?.by || '—')}</td>
+    <td class="sh-td-muted sh-td-trunc" title="${escHtml(r.shipment?.by || '')}">${escHtml(r.shipment?.by || '—')}</td>
     <td class="sh-td-muted sh-td-date">${fmtDateTime(r.shippedAt)}</td>
     <td class="sh-td-num">${r.receivedRK != null ? r.receivedRK : '<span class="sh-na">—</span>'}</td>
-    <td class="sh-td-muted">${escHtml(r.receiving?.by || '—')}</td>
+    <td class="sh-td-muted sh-td-trunc" title="${escHtml(r.receiving?.by || '')}">${escHtml(r.receiving?.by || '—')}</td>
     <td class="sh-td-muted sh-td-date">${fmtDateTime(r.receivedAt)}</td>
     <td class="sh-td-num">${diffHtml(r.diff)}</td>
-    <td class="sh-td-muted">${escHtml(r.shipment?.confirmedBy || '—')}</td>
-    <td class="sh-td-muted">${escHtml(r.receiving?.confirmedBy || '—')}</td>
+    <td class="sh-td-muted sh-td-trunc" title="${escHtml(r.shipment?.confirmedBy || '')}">${escHtml(r.shipment?.confirmedBy || '—')}</td>
+    <td class="sh-td-muted sh-td-trunc" title="${escHtml(r.receiving?.confirmedBy || '')}">${escHtml(r.receiving?.confirmedBy || '—')}</td>
     <td class="sh-td-actions sh-td-actions-cell">${shipConfirm}${recvConfirm}${editBtn}</td>
   </tr>`;
 
